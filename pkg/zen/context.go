@@ -20,17 +20,17 @@ type Context struct {
 	Writer   *ResponseWriter
 	Request  *http.Request
 	Params   map[string]string // URL parameters
-	handlers []HandlerFunc
-	index    int
+	Handlers []HandlerFunc
+	Index    int
 	Ctx      context.Context
 }
 
 // newContext creates a new Context instance
-func newContext(w http.ResponseWriter, req *http.Request) *Context {
+func NewContext(w http.ResponseWriter, req *http.Request) *Context {
 	return &Context{
 		Writer:  NewResponseWriter(w),
 		Request: req,
-		index:   -1,
+		Index:   -1,
 		Params:  make(map[string]string),
 		Ctx:     req.Context(),
 	}
@@ -38,10 +38,10 @@ func newContext(w http.ResponseWriter, req *http.Request) *Context {
 
 // Next executes the next handler in the chain
 func (c *Context) Next() {
-	c.index++
-	for c.index < len(c.handlers) {
-		c.handlers[c.index](c)
-		c.index++
+	c.Index++
+	for c.Index < len(c.Handlers) {
+		c.Handlers[c.Index](c)
+		c.Index++
 	}
 }
 
@@ -84,7 +84,7 @@ func (c *Context) Text(code int, format string, values ...interface{}) {
 	c.Writer.Header().Set("Content-Type", "text/plain")
 	c.Writer.WriteHeader(code)
 	if len(values) > 0 {
-		format = fmt.Sprintf(format, values)
+		format = fmt.Sprintf(format, values...)
 	}
 	c.Writer.Write([]byte(format))
 }

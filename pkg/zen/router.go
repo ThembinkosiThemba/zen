@@ -107,7 +107,7 @@ func (r *Router) handle(c *Context) {
 		for pattern, handlers := range methodHandlers {
 			if params, ok := matchPath(pattern, path); ok {
 				c.Params = params
-				c.handlers = handlers
+				c.Handlers = handlers
 				c.Next()
 				return
 			}
