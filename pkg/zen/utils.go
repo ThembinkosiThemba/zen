@@ -62,27 +62,43 @@ func GetMethodColor(method string) string {
 // print routes to terminal
 func (engine *Engine) printRoutes() {
 	routes := engine.Routes()
+	maxPathLength := 0
+	methodWidth := 7
 
-	// Print header
-	fmt.Printf("\n%s%s%s\n", Green, "Registered Routes", Reset)
-
-	// Print horizontal line with box characters
-	fmt.Printf("╔═════════╦%s╗\n", strings.Repeat("═", 30))
-
-	// Print routes
 	for _, r := range routes {
-		methodColor := GetMethodColor(r.Method)
-
-		// Print each route with proper alignment
-		fmt.Printf("║ %s%-7s%s ║ %-28s║\n",
-			methodColor,
-			r.Method,
-			Reset,
-			r.Path)
+		if len(r.Path) > maxPathLength {
+			maxPathLength = len(r.Path)
+		}
 	}
 
-	// Print bottom border
-	fmt.Printf("╚═════════╩%s╝\n", strings.Repeat("═", 30))
+	maxPathLength += 2
+	if maxPathLength < 30 {
+		maxPathLength = 30
+	}
+
+	// Print header for routes
+	fmt.Printf("%s\nRegistered Routes%s\n", Green, Reset)
+
+	// Print the top border
+	fmt.Printf("╔═%s═╦═%s═╗\n",
+		strings.Repeat("═", methodWidth),
+		strings.Repeat("═", maxPathLength))
+
+	for _, r := range routes {
+		methodColor := GetMethodColor(r.Method)
+		method := fmt.Sprintf("%-"+fmt.Sprint(methodWidth)+"s", r.Method)
+		path := fmt.Sprintf("%-"+fmt.Sprint(maxPathLength)+"s", r.Path)
+
+		fmt.Printf("║ %s%s%s ║ %s ║\n",
+			methodColor,
+			method,
+			Reset,
+			path)
+	}
+
+	fmt.Printf("╚═%s═╩═%s═╝\n",
+		strings.Repeat("═", methodWidth),
+		strings.Repeat("═", maxPathLength))
 }
 
 // Helper functions for colorizing output
