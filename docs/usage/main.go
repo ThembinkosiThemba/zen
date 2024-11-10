@@ -14,9 +14,15 @@ func main() {
 
 	// using the logger and recovery middleware
 	app.Use(
-		middleware.Logger(),
+		// middleware.Logger(),
 		middleware.Recovery(),
 	)
+
+	// Enable logging to file with default path (logs/zen.log)
+	app.Use(middleware.Logger(middleware.LoggerConfig{
+		LogToFile: true,
+		LogFilePath: "logs/zen2.log",
+	}))
 
 	// define simple routes
 	app.GET("/", func(c *zen.Context) {

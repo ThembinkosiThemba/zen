@@ -2,31 +2,33 @@ package middleware
 
 import (
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/ThembinkosiThemba/zen/pkg/zen"
 )
 
+// RateLimitStrategy defines the type of rate limiting to use
+type RateLimitStrategy string
+
+const (
+	IPBased       RateLimitStrategy = "ip-based"
+	SlidingWindow RateLimitStrategy = "sliding-window"
+)
+
 // RateLimitConfig holds configuration for the RateLimiter middleware
 type RateLimitConfig struct {
-	Limit           int           // Maximum requests per window
-	Window          time.Duration // Window duration
-	BurstLimit      int           // Temporary burst allowance above the limit
-	CustomKeyFunc   func(*zen.Context) string
-	ExlcudePaths    []string
-	StatusCode      int
-	CustomErrorFunc func(*zen.Context, time.Duration)
+	Limit           int                               // Maximum requests per window
+	Window          time.Duration                     // Window duration
+	BurstLimit      int                               // Temporary burst allowance above the limit
+	CustomKeyFunc   func(*zen.Context) string         // function to generate key for rate limiting
+	ExcludePaths    []string                          // paths to exclude from rate limiting
+	StatusCode      int                               // HTTP status code for rate limit exceeded
+	CustomErrorFunc func(*zen.Context, time.Duration) // Custom error handling
+	Strategy        RateLimitStrategy                 // rate limiting strategy to use
 }
 
-// client holds information for each client tracked by the rate limiter
-// type client struct {
-// 	requestCount int
-// 	windowStart  time.Time
-// 	burstUsed    int
-// 	blocked      bool
-// }
-
-// DefaultRateLimiterConfig returns the default configs for RateLimiter
+// DefaultRateLimiterConfig returns the default configs for RateLimiter which for now, we are going to stick to IP-based
 func DefaultRateLimiterConfig() RateLimitConfig {
 	return RateLimitConfig{
 		Limit:      100,
@@ -36,5 +38,137 @@ func DefaultRateLimiterConfig() RateLimitConfig {
 			return c.ClientIP()
 		},
 		StatusCode: http.StatusTooManyRequests,
+		Strategy:   IPBased,
 	}
+}
+
+// windowEntry keeps track of requests in a time window
+type windowEntry struct {
+	count     int
+	startTime time.Time
+}
+
+// RateLimiter implements the ratelimiting logic
+type RateLimiter struct {
+	config  RateLimitConfig
+	windows sync.Map // maps keys to windowEntry
+}
+
+// NewRateLimiter creates a new rate limiter with the given configuration
+func NewRateLimiter(config RateLimitConfig) *RateLimiter {
+	return &RateLimiter{
+		config: config,
+	}
+}
+
+// RateLimiterMiddleware creates a new rate limiting middleware
+func RateLimiterMiddleware(config ...RateLimitConfig) zen.HandlerFunc {
+	var cfg RateLimitConfig
+	if len(config) > 0 {
+		cfg = config[0]
+	} else {
+		cfg = DefaultRateLimiterConfig()
+	}
+
+	limiter := NewRateLimiter(cfg)
+
+	return func(c *zen.Context) {
+		for _, path := range cfg.ExcludePaths {
+			if c.Request.URL.Path == path {
+				c.Next()
+				return
+			}
+		}
+
+		key := cfg.CustomKeyFunc(c)
+		allowed := limiter.isAllowed(key)
+
+		if !allowed {
+			if cfg.CustomErrorFunc != nil {
+				cfg.CustomErrorFunc(c, cfg.Window)
+			} else {
+				c.Text(cfg.StatusCode, "Rate limit exceeded. Try again in %v", cfg.Window)
+			}
+			// c.Quit() //TODO: func in context
+			return
+		}
+		c.Next()
+	}
+
+}
+
+// isAllowed checks if the request should be allowed based on the rate limiting strategy
+func (rl *RateLimiter) isAllowed(key string) bool {
+	now := time.Now()
+
+	switch rl.config.Strategy {
+	case SlidingWindow:
+		return rl.isSlidingWindowAllowed(key, now)
+	default: // IP-based
+		return rl.isIPBasedAllowed(key, now)
+	}
+}
+
+// isIPBasedAllowed implements simple IP-based rate limiting
+func (rl *RateLimiter) isIPBasedAllowed(key string, now time.Time) bool {
+	val, exists := rl.windows.Load(key)
+	if !exists {
+		rl.windows.Store(key, &windowEntry{count: 1, startTime: now})
+		return true
+	}
+
+	entry := val.(*windowEntry)
+	if now.Sub(entry.startTime) > rl.config.Window {
+		// window has expired, reset counter
+		entry.count = 1
+		entry.startTime = now
+		return true
+	}
+
+	if entry.count >= rl.config.Limit {
+		// allow burst
+		if entry.count < rl.config.Limit+rl.config.BurstLimit {
+			entry.count++
+			return true
+		}
+		return false
+	}
+	entry.count++
+	return true
+}
+
+// isSlidingWindowAllowed implements sliding window rate limiting
+func (rl *RateLimiter) isSlidingWindowAllowed(key string, now time.Time) bool {
+	val, exists := rl.windows.Load(key)
+	if !exists {
+		rl.windows.Store(key, &windowEntry{count: 1, startTime: now})
+		return true
+	}
+
+	entry := val.(*windowEntry)
+	windowDuration := now.Sub(entry.startTime)
+
+	if windowDuration > rl.config.Window {
+		// get the overlap with the previous window
+		overlap := windowDuration - rl.config.Window
+		weight := float64(rl.config.Window-overlap) / float64(rl.config.Window)
+
+		// get the requests in current window considering the overlap
+		oldCount := int(float64(entry.count) * weight)
+		entry.count = oldCount + 1
+		entry.startTime = now
+
+		return entry.count <= rl.config.Limit
+	}
+
+	if entry.count >= rl.config.Limit {
+		if entry.count < rl.config.Limit+rl.config.BurstLimit {
+			entry.count++
+			return true
+		}
+		return false
+	}
+
+	entry.count++
+	return true
 }
