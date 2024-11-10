@@ -3,13 +3,16 @@ package zen
 import (
 	"fmt"
 	"net/http"
+	"time"
 )
 
 // Engine is the framework instance
 type Engine struct {
 	*RouterGroup
-	router *Router
-	groups []*RouterGroup
+	router    *Router
+	groups    []*RouterGroup
+	addr      string
+	cus_contx Context
 }
 
 type Route struct {
@@ -32,6 +35,41 @@ func (engine *Engine) Serve(addr string) error {
 	engine.printRoutes()
 	fmt.Print(engine.zenAsciiArt(addr))
 	return http.ListenAndServe(addr, engine)
+}
+
+// ServeTLS start the HTTPS server
+func (engine *Engine) ServeTLS(addr, certFile, keyFile string) error {
+	engine.printRoutes()
+	fmt.Print(engine.zenAsciiArt(addr))
+	return http.ListenAndServeTLS(addr, certFile, keyFile, engine)
+}
+
+// ServeWithTimeout starts the HTTP server with timeout settings
+func (engine *Engine) ServeWithTimeout(addr string, timeout time.Duration) error {
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      engine,
+		ReadTimeout:  timeout,
+		WriteTimeout: timeout,
+		IdleTimeout:  timeout * 2,
+	}
+	engine.printRoutes()
+	fmt.Print(engine.zenAsciiArt(addr))
+	return srv.ListenAndServe()
+}
+
+// Shutdown gracefully shuts down the server
+func (engine *Engine) Shutdown(timeout time.Duration) error {
+	server := &http.Server{
+		Addr:    engine.addr,
+		Handler: engine,
+	}
+
+	var ctx, cancel = engine.cus_contx.CustomContext()
+	defer cancel()
+
+	return server.Shutdown(ctx)
+
 }
 
 // ServeHTTP implements the http.Handler interface

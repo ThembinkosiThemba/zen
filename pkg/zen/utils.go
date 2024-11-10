@@ -85,15 +85,6 @@ func (engine *Engine) printRoutes() {
 	fmt.Printf("╚═════════╩%s╝\n", strings.Repeat("═", 30))
 }
 
-// func containsString(slice []string, item string) bool {
-// 	for _, s := range slice {
-// 		if s == item {
-// 			return true
-// 		}
-// 	}
-// 	return false
-// }
-
 // Helper functions for colorizing output
 func ColorForStatus(code int) string {
 	switch {
