@@ -20,7 +20,7 @@ func main() {
     // Use default CORS middleware
     app.Use(middleware.DefaultCors())
     
-    app.Run(":8080")
+    app.Serve(":8080")
 }
 ```
 
@@ -41,7 +41,7 @@ func main() {
     
     app.Use(middleware.CORSWithConfig(config))
     
-    app.Run(":8080")
+    app.Serve(":8080")
 }
 ```
 

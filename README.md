@@ -1,6 +1,6 @@
 # Zen Web Framework
 
-Zen is a lightweight and fast HTTP framework for Go, focusing on simplicity and performance while providing essential features for modern web applications.
+Zen is a lightweight and fast HTTP framework for Go, focusing on simplicity and performance while providing enterprise-grade features for modern web applications.
 
 <p align="start">
     <img src="./docs/assets/zen.png" alt="zen" />
@@ -9,13 +9,15 @@ Zen is a lightweight and fast HTTP framework for Go, focusing on simplicity and 
 ## Features
 
 - 🚀 Lightweight and Fast
-- 🛡️ Built-in Middleware Support
-- 🎯 Simple Routing
-- 🔒 Authentication Support
-- 🌐 CORS Handling
-- ⚡  Rate Limiting
+- 🛡️ Comprehensive Middleware Support
+  - Authentication (JWT-based)
+  - CORS Management
+  - Rate Limiting
+  - Security Headers & Protections
+- 🎯 Simple & Intuitive Routing
 - 📝 Request Logging
-- 🔄 Hot Reloading
+- ⚡ Hot Reloading for Development
+- 🔒 Enterprise-Grade Security
 
 ## Quick Start
 
@@ -41,11 +43,12 @@ func main() {
 
     // Global middleware
     app.Use(
-        middleware.Logger(),      // Zen logger
-        middleware.RateLimiter(), // Rate limiting of APIS
-        middleware.DefaultCors(), // Default CORS configuration
+        middleware.Logger(),           // Request logging
+        middleware.SecurityMiddleware(), // Security features
+        middleware.DefaultCors(),      // CORS protection
+        middleware.RateLimiter(),      // API rate limiting
     )
-    
+
     // Basic routes
     app.GET("/", func(c *zen.Context) {
         c.JSON(http.StatusOK, map[string]interface{}{
@@ -54,11 +57,97 @@ func main() {
     })
 
     // Start server
-    app.Run(":8080")
+    app.Serve(":8080")
 }
 ```
 
-### Complete Example with All Features
+## Middleware Documentation
+
+### Authentication Middleware
+
+Zen provides a flexible JWT-based authentication system with features including:
+
+- Multiple token sources (Header, Query, Cookie)
+- Custom claims support
+- Role-based access control
+- Configurable unauthorized responses
+
+```go
+// Basic Auth Setup
+app.Use(middleware.Auth("your-secret-key"))
+
+// Advanced Configuration
+authConfig := middleware.AuthConfig{
+    SecretKey:     "your-secret-key",
+    TokenLookup:   "header:Authorization",
+    TokenHeadName: "Bearer",
+    SkipPaths:     []string{"/public"},
+}
+app.Use(middleware.AuthWithConfig(authConfig))
+```
+
+### CORS Middleware
+
+Configure Cross-Origin Resource Sharing with fine-grained control:
+
+```go
+corsConfig := middleware.CORSConfig{
+    AllowOrigins:     []string{"https://example.com"},
+    AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},
+    AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
+    AllowCredentials: true,
+    MaxAge:          3600,
+}
+app.Use(middleware.CORSWithConfig(corsConfig))
+```
+
+### Rate Limiter Middleware
+
+Protect your APIs with sophisticated rate limiting:
+
+```go
+rateConfig := middleware.RateLimitConfig{
+    Strategy:   middleware.SlidingWindow,
+    Limit:      100,
+    Window:     time.Minute,
+    BurstLimit: 20,
+    ExcludePaths: []string{"/health"},
+}
+app.Use(middleware.RateLimiterMiddleware(rateConfig))
+```
+
+Features:
+
+- Multiple rate limiting strategies (IP-based, Sliding Window)
+- Configurable time windows and limits
+- Burst handling
+- Path exclusions
+
+### Security Middleware
+
+Comprehensive security features:
+
+```go
+securityConfig := middleware.SecurityConfig{
+    Strategies: middleware.HeaderSecurity |
+               middleware.RequestSanitization,
+    HSTS: true,
+    CSPDirectives: &middleware.ContentSecurityPolicyDirective{
+        DefaultSrc: []string{"'self'"},
+    },
+    MaxRequestSize: 5 * 1024 * 1024,
+}
+app.Use(middleware.SecurityMiddleware(securityConfig))
+```
+
+Features:
+
+- Security Headers (HSTS, CSP, X-Frame-Options)
+- Request Sanitization
+- IP Security
+- Session Security
+
+## Complete Example with All Features
 
 ```go
 package main
@@ -73,7 +162,14 @@ func main() {
     // Create new Zen app
     app := zen.New()
 
-    // Configure middleware
+    // Configure security
+    securityConfig := middleware.SecurityConfig{
+        Strategies: middleware.HeaderSecurity | middleware.RequestSanitization,
+        HSTS:       true,
+        HSTSMaxAge: 63072000,
+    }
+
+    // Configure CORS
     corsConfig := middleware.CORSConfig{
         AllowOrigins:     []string{"http://localhost:3000"},
         AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},
@@ -82,132 +178,74 @@ func main() {
         MaxAge:          3600,
     }
 
+    // Configure rate limiting
     rateConfig := middleware.RateLimitConfig{
-        Limit:  100,
-        Window: time.Minute,
+        Strategy:   middleware.SlidingWindow,
+        Limit:      100,
+        Window:     time.Minute,
+        BurstLimit: 20,
+    }
+
+    // Configure authentication
+    authConfig := middleware.AuthConfig{
+        SecretKey:   "your-secret-key",
+        SkipPaths:   []string{"/login", "/public"},
+        TokenLookup: "header:Authorization",
     }
 
     // Apply middleware
-    app.Use(middleware.Logger())                    // Logging
-    app.Use(middleware.CORSWithConfig(corsConfig))  // CORS
-    app.Use(middleware.RateLimiter(rateConfig))     // Rate Limiting
+    app.Use(
+        middleware.Logger(),
+        middleware.SecurityMiddleware(securityConfig),
+        middleware.CORSWithConfig(corsConfig),
+        middleware.RateLimiterMiddleware(rateConfig),
+        middleware.AuthWithConfig(authConfig),
+    )
 
     // Public routes
-    app.GET("/", func(c *zen.Context) {
+    app.GET("/public", func(c *zen.Context) {
         c.JSON(http.StatusOK, map[string]interface{}{
-            "message": "Welcome to Zen!",
+            "message": "Public endpoint",
         })
     })
 
-    // Protected routes group
+    // Protected routes
     api := app.Group("/api")
-    api.Use(middleware.Auth("your-secret-key")) // Authentication middleware
-
-    api.GET("/users", func(c *zen.Context) {
-        // Example of binding JSON request
-        var req struct {
-            Page  int `json:"page"`
-            Limit int `json:"limit"`
-        }
-
-        if !c.BindJSONWithError(&req) {
-            return
-        }
-
+    api.GET("/protected", func(c *zen.Context) {
+        claims, _ := middleware.GetClaims[*middleware.BaseClaims](c)
         c.JSON(http.StatusOK, map[string]interface{}{
-            "users": []string{"user1", "user2"},
+            "message": "Protected endpoint",
+            "user":    claims.UserID,
         })
-    })
-
-    api.POST("/users", func(c *zen.Context) {
-        var user struct {
-            Name  string `json:"name"`
-            Email string `json:"email"`
-        }
-
-        if !c.BindJSONWithError(&user) {
-            return
-        }
-
-        c.JSON(http.StatusCreated, user)
     })
 
     // Start server with hot reload
     zen.HotReloadEnabled = true // Enable hot reloading
-    app.Run(":8080")
-}
-```
-
-## Middleware Documentation
-
-Detailed documentation for each middleware:
-
-- [Authentication](docs/middleware/auth.md)
-- [CORS](docs/middleware/cors.md)
-- [Rate Limiter](docs/middleware/rate_limiter.md)
-- [Logger](docs/middleware/logger.md)
-
-## Configuration
-
-### Hot Reload
-
-Enable hot reloading during development:
-
-```go
-zen.HotReloadEnabled = true
-```
-
-### Custom Middleware Stack
-
-Create custom middleware combinations:
-
-```go
-func CustomMiddlewareStack() []zen.HandlerFunc {
-    return []zen.HandlerFunc{
-        middleware.Logger(),
-        middleware.DefaultCors(),
-        middleware.RateLimiter(),
-    }
+    app.Serve(":8080")
 }
 ```
 
 ## Best Practices
 
-1. **Middleware Order**:
+1. **Security First**:
+
+   - Always enable security middleware in production
+   - Use HTTPS
+   - Configure appropriate rate limits
+   - Implement proper authentication
+
+2. **Performance Optimization**:
+
+   - Enable hot reload only in development
+   - Configure appropriate request size limits
+   - Use route groups for better organization
+
+3. **Middleware Order**:
    - Logger (first to log all requests)
-   - CORS (early to handle preflight)
+   - Security (early protection)
+   - CORS (handle preflight)
    - Rate Limiter
    - Authentication (after rate limiting)
-
-2. **Error Handling**:
-   ```go
-   app.Use(func(c *zen.Context) {
-       defer func() {
-           if err := recover(); err != nil {
-               c.JSON(http.StatusInternalServerError, map[string]interface{}{
-                   "error": "Internal Server Error",
-               })
-           }
-       }()
-       c.Next()
-   })
-   ```
-
-3. **Route Groups**:
-   ```go
-   v1 := app.Group("/v1")
-   v1.Use(middleware.Auth("secret"))
-   
-   admin := v1.Group("/admin")
-   admin.Use(adminAuthMiddleware)
-   ```
-
-## Performance Tips
-
-1. Use appropriate rate limits
-2. Enable hot reload only in development
-3. Configure CORS specifically for your needs
-4. Use route groups for better organization
 
 ## Contributing
 
@@ -216,6 +254,15 @@ func CustomMiddlewareStack() []zen.HandlerFunc {
 3. Commit your changes
 4. Push to the branch
 5. Create a Pull Request
+
+## Documentation
+
+Detailed documentation for each component:
+
+- [Authentication](docs/auth.md)
+- [CORS](docs/cors.md)
+- [Rate Limiter](docs/rate_limiter.md)
+- [Security](docs/security.md)
 
 ## License
 
