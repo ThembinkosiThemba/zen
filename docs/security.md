@@ -25,7 +25,7 @@ Use with default configuration:
 func main() {
     app := zen.New()
     app.Use(middleware.SecurityMiddleware())
-    app.Run(":8080")
+    app.Serve(":8080")
 }
 ```
 
@@ -76,7 +76,7 @@ func main() {
     }
 
     app.Use(middleware.SecurityMiddleware(config))
-    app.Run(":8080")
+    app.Serve(":8080")
 }
 ```
 

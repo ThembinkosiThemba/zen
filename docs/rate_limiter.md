@@ -53,7 +53,7 @@ func main() {
     }
     
     app.Use(middleware.RateLimiterMiddleware(config))
-    app.Run(":8080")
+    app.Serve(":8080")
 }
 ```
 
@@ -71,7 +71,7 @@ func main() {
     }
     
     app.Use(middleware.RateLimiterMiddleware(config))
-    app.Run(":8080")
+    app.Serve(":8080")
 }
 ```
 
@@ -107,7 +107,7 @@ func main() {
     }
 
     app.Use(middleware.RateLimiterMiddleware(config))
-    app.Run(":8080")
+    app.Serve(":8080")
 }
 ```
 
@@ -140,7 +140,7 @@ func main() {
     api := app.Group("/api")
     api.Use(middleware.RateLimiterMiddleware(apiConfig))
     
-    app.Run(":8080")
+    app.Serve(":8080")
 }
 ```
 

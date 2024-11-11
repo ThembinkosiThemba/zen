@@ -28,7 +28,7 @@ func main() {
         LogToFile: true,  // Logs will be written to logs/zen.log
     }))
     
-    app.Run(":8080")
+    app.Serve(":8080")
 }
 ```
 
@@ -53,7 +53,7 @@ func main() {
     
     app.Use(middleware.Logger(config))
     
-    app.Run(":8080")
+    app.Serve(":8080")
 }
 ```
 
