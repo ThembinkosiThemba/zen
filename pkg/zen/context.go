@@ -15,8 +15,6 @@ var (
 	ErrBadJSON   = errors.New("invalid JSON format")
 )
 
-// TODO: funciton to set headers, query etc
-
 // Context holds the request and response data
 type Context struct {
 	Writer   *ResponseWriter
@@ -59,24 +57,73 @@ func (c *Context) QuitWithStatus(code int) {
 	c.Quit()
 }
 
-// context interface methods
-// Deadline, Done, Err, Value, WithValue
+// Deadline returns the time when work done on behalf of this context should be canceled.
+// The deadline is represented as a time.Time value. ok will be false when no deadline is set.
+//
+// Usage:
+//
+//	deadline, ok := c.Deadline()
+//	if ok {
+//	    fmt.Printf("Work must be completed by: %v\n", deadline)
+//	} else {
+//	    fmt.Println("No deadline set")
+//	}
 func (c *Context) Deadline() (deadline time.Time, ok bool) {
 	return c.Ctx.Deadline()
 }
 
+// Done returns a channel that's closed when work done on behalf of this context
+// should be canceled. If this context can never be canceled, Done may return nil.
+//
+// Usage:
+//
+//	select {
+//	case <-c.Done():
+//	    fmt.Println("Context canceled, stopping work")
+//	    return
+//	case <-time.After(5 * time.Second):
+//	    fmt.Println("Work completed")
+//	}
 func (c *Context) Done() <-chan struct{} {
 	return c.Ctx.Done()
 }
 
+// Err returns nil if Done is not yet closed, or a non-nil error explaining why
+// the context was canceled if Done is closed.
+//
+// Usage:
+//
+//	if err := c.Err(); err != nil {
+//	    fmt.Printf("Context error: %v\n", err)
+//	    return
+//	}
 func (c *Context) Err() error {
 	return c.Ctx.Err()
 }
 
+// Value returns the value associated with this context for a given key, or nil
+// if no value is associated with key. Successive calls to Value with the same key
+// returns the same result.
+//
+// Usage:
+//
+//	userID := c.Value("userID")
+//	if id, ok := userID.(string); ok {
+//	    fmt.Printf("Current user: %s\n", id)
+//	}
 func (c *Context) Value(key interface{}) interface{} {
 	return c.Ctx.Value(key)
 }
 
+// WithValue returns a copy of context with the provided key-value pair.
+// The provided key must be comparable and should not be string or any other
+// built-in type to avoid collisions.
+//
+// Usage:
+//
+//	type contextKey string
+//	userKey := contextKey("userID")
+//	newCtx := c.WithValue(userKey, "12345")
 func (c *Context) WithValue(key, val interface{}) *Context {
 	newCtx := *c
 	newCtx.Ctx = context.WithValue(c.Ctx, key, val)
@@ -108,11 +155,6 @@ func (c *Context) Status(code int) {
 	c.Writer.WriteHeader(code)
 }
 
-// GetParam returns the value of the URL parameter
-func (c *Context) GetParam(key string) string {
-	return c.Params[key]
-}
-
 // ClientIP returns the client IP address
 func (c *Context) ClientIP() string {
 	// First, we need to check X-Real-IP header
@@ -131,8 +173,8 @@ func (c *Context) ClientIP() string {
 	return c.Request.RemoteAddr
 }
 
-// BindJSON binds request body to a struct
-func (c *Context) BindJSON(obj interface{}) error {
+// ParseJSON parses request body into the provided struct
+func (c *Context) ParseJSON(obj interface{}) error {
 	if c.Request.Body == nil {
 		return ErrEmptyBody
 	}
@@ -154,14 +196,14 @@ func (c *Context) BindJSON(obj interface{}) error {
 	return nil
 }
 
-// ShouldBindJSON binds the JSON body and returns a boolean indicating success
-func (c *Context) ShouldBindJSON(obj interface{}) bool {
-	return c.BindJSON(obj) == nil
+// TryParseJSON binds the JSON body and returns a boolean indicating success
+func (c *Context) TryParseJSON(obj interface{}) bool {
+	return c.ParseJSON(obj) == nil
 }
 
-// BindJSONWithError binds JSON and writes an error response if binding fails
-func (c *Context) BindJSONWithError(obj interface{}) bool {
-	if err := c.BindJSON(obj); err != nil {
+// ParseJSONWithError binds JSON and writes an error response if binding fails
+func (c *Context) ParseJSONWithError(obj interface{}) bool {
+	if err := c.ParseJSON(obj); err != nil {
 		c.JSON(http.StatusBadRequest, map[string]interface{}{
 			"error": err.Error(),
 		})
@@ -187,7 +229,30 @@ func (c *Context) SetQueryParam(key, value string) {
 	c.Request.URL.RawQuery = query.Encode()
 }
 
-// GetQueryParam returns the value of a query parameter
+// GetParam returns the value of a URL path parameter defined in the route.
+// It retrieves parameters that are part of the URL path defined with ":" prefix.
+//
+// Usage:
+//
+//	// For route: "/users/:id/posts/:postId"
+//	// URL: "/users/123/posts/456"
+//	router.GET("/users/:id/posts/:postId", func(c *Context) {
+//	    userID := c.GetParam("id")     // Returns "123"
+//	    postID := c.GetParam("postId") // Returns "456"
+//	})
+func (c *Context) GetParam(key string) string {
+	return c.Params[key]
+}
+
+// GetQueryParam returns the value of a URL query parameter.
+// It retrieves parameters that come after the '?' in the URL.
+//
+// Usage:
+//
+//	// For URL: http://example.com/search?query=golang&page=1
+//	query := c.GetQueryParam("query")    // Returns "golang"
+//	page := c.GetQueryParam("page")      // Returns "1"
+//	missing := c.GetQueryParam("absent") // Returns ""
 func (c *Context) GetQueryParam(key string) string {
 	return c.Request.URL.Query().Get(key)
 }

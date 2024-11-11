@@ -74,6 +74,18 @@ type SecurityConfig struct {
 	OnSecurityViolation func(*zen.Context, string) // Called when a security violation occurs
 }
 
+const (
+	SameOrigin              = "SAMEORIGIN"
+	StrictOriginPolicy      = "strict-origin-when-cross-origin"
+	HstsMaxAge              = 31536000 // one year in seconds
+	StrictTransportSecurity = "Strict-Transport-Security"
+	ContentSecurityPolicy   = "Content-Security-Policy"
+	XContentTypeOptions     = "X-Content-Type-Options"
+	XXSSProtection          = "X-XSS-Protection"
+	XFrameOptions           = "X-Frame-Options"
+	ReferrerPolicy          = "Referrer-Policy"
+)
+
 // DefaultSecurityConfig returns the default security configuration
 func DefaultSecurityConfig() SecurityConfig {
 	return SecurityConfig{
@@ -81,12 +93,12 @@ func DefaultSecurityConfig() SecurityConfig {
 
 		// Default security headers
 		HSTS:                  true,
-		HSTSMaxAge:            31536000, // one year in seconds - // TODO: remove magic numbers
+		HSTSMaxAge:            HstsMaxAge,
 		HSTSIncludeSubdomains: true,
 		ContentTypeOptions:    true,
 		XSSProtection:         true,
-		FrameOptions:          "SAMEORIGIN",
-		ReferrerPolicy:        "strict-origin-when-cross-origin",
+		FrameOptions:          SameOrigin,
+		ReferrerPolicy:        StrictOriginPolicy,
 
 		CSPDirectives: &ContentSecurityPolicyDirective{
 			DefaultSrc: []string{"'self'"},
@@ -163,23 +175,23 @@ func setSecurityHeaders(c *zen.Context, cfg SecurityConfig) {
 		if cfg.HSTSPreload {
 			hstsValue += "; preload"
 		}
-		c.Request.Header.Set("Strict-Transport-Security", hstsValue)
+		c.Request.Header.Set(StrictTransportSecurity, hstsValue)
 	}
 
 	// CSP
 	if cfg.CSPDirectives != nil {
-		c.Request.Header.Set("Content-Security-Policy", buildCSPHeader(cfg.CSPDirectives))
+		c.Request.Header.Set(ContentSecurityPolicy, buildCSPHeader(cfg.CSPDirectives))
 	}
 
 	if cfg.ContentTypeOptions {
-		c.Request.Header.Set("X-Content-Type-Options", "nosniff")
+		c.Request.Header.Set(XContentTypeOptions, "nosniff")
 	}
 
 	if cfg.XSSProtection {
-		c.Request.Header.Set("X-XSS-Protection", "1; mode=block")
+		c.Request.Header.Set(XXSSProtection, "1; mode=block")
 	}
-	c.Request.Header.Set("X-Frame-Options", cfg.FrameOptions)
-	c.Request.Header.Set("Referrer-Policy", cfg.ReferrerPolicy)
+	c.Request.Header.Set(XFrameOptions, cfg.FrameOptions)
+	c.Request.Header.Set(ReferrerPolicy, cfg.ReferrerPolicy)
 }
 
 func buildCSPHeader(directives *ContentSecurityPolicyDirective) string {
@@ -190,7 +202,8 @@ func buildCSPHeader(directives *ContentSecurityPolicyDirective) string {
 	}
 
 	if len(directives.ScriptSrc) > 0 {
-		policies = append(policies, fmt.Sprintf("script-src %s", strings.Join(directives.ScriptSrc, " ")))
+		// policies = append(policies, fmt.Sprintf("script-src %s", strings.Join(directives.ScriptSrc, " ")))
+		_ = append(policies, fmt.Sprintf("script-src %s", strings.Join(directives.ScriptSrc, " ")))
 	}
 
 	// TODO: finish all directives

@@ -129,7 +129,7 @@ func TestLoggerCleanup(t *testing.T) {
 
 	// Verify file exists
 	_, err := os.Stat(logPath)
-	require.NoError(t, err, "Log file should exist")
+ 	require.NoError(t, err, "Log file should exist")
 
 	// Test cleanup
 	err = Close()
