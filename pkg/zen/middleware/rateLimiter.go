@@ -89,7 +89,7 @@ func RateLimiterMiddleware(config ...RateLimitConfig) zen.HandlerFunc {
 			} else {
 				c.Text(cfg.StatusCode, "Rate limit exceeded. Try again in %v", cfg.Window)
 			}
-			// c.Quit() //TODO: func in context
+			c.Quit()
 			return
 		}
 		c.Next()
@@ -125,50 +125,47 @@ func (rl *RateLimiter) isIPBasedAllowed(key string, now time.Time) bool {
 		return true
 	}
 
-	if entry.count >= rl.config.Limit {
-		// allow burst
-		if entry.count < rl.config.Limit+rl.config.BurstLimit {
-			entry.count++
-			return true
-		}
-		return false
+	// Allow requests within base limit + burst limit
+	if entry.count < rl.config.Limit+rl.config.BurstLimit {
+		entry.count++
+		return true
 	}
-	entry.count++
-	return true
+
+	return false
 }
 
 // isSlidingWindowAllowed implements sliding window rate limiting
 func (rl *RateLimiter) isSlidingWindowAllowed(key string, now time.Time) bool {
 	val, exists := rl.windows.Load(key)
-	if !exists {
-		rl.windows.Store(key, &windowEntry{count: 1, startTime: now})
-		return true
-	}
+    if !exists {
+        rl.windows.Store(key, &windowEntry{count: 1, startTime: now})
+        return true
+    }
 
 	entry := val.(*windowEntry)
 	windowDuration := now.Sub(entry.startTime)
 
 	if windowDuration > rl.config.Window {
 		// get the overlap with the previous window
-		overlap := windowDuration - rl.config.Window
-		weight := float64(rl.config.Window-overlap) / float64(rl.config.Window)
+		// We are calculating how many requests from the previous window should be counted
+		overlap := rl.config.Window - (windowDuration - rl.config.Window)
+		if overlap < 0 {
+			overlap = 0
+		}
+
+		weight := float64(overlap) / float64(rl.config.Window)
+		previousCount := int(float64(entry.count) * weight)
 
 		// get the requests in current window considering the overlap
-		oldCount := int(float64(entry.count) * weight)
-		entry.count = oldCount + 1
+		entry.count = previousCount + 1
 		entry.startTime = now
 
-		return entry.count <= rl.config.Limit
+		return entry.count < rl.config.Limit+rl.config.BurstLimit
 	}
 
-	if entry.count >= rl.config.Limit {
-		if entry.count < rl.config.Limit+rl.config.BurstLimit {
-			entry.count++
-			return true
-		}
-		return false
+	if entry.count < rl.config.Limit+rl.config.BurstLimit {
+		entry.count++
+		return true
 	}
-
-	entry.count++
-	return true
+	return false
 }

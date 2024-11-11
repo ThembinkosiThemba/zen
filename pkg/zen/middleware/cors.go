@@ -33,6 +33,16 @@ type CORSConfig struct {
 	MaxAge int
 }
 
+const (
+	AccessControlAllowOrigin      = "Access-Control-Allow-Origin"
+	AccessControlAllowMethods     = "Access-Control-Allow-Methods"
+	AccessControlAllowHeaders     = "Access-Control-Allow-Headers"
+	AccesControlMaxAge            = "Access-Control-Max-Age"
+	AccessControlAllowCredentials = "Access-Control-Allow-Credentials"
+	AccessControlRequestHeaders   = "Access-Control-Request-Headers"
+	AccessControlExposeHeaders    = "Access-Control-Expose-Headers"
+)
+
 // DefaultCORSConfig returns the default CORS configuration
 func DefaultCORSConfig() CORSConfig {
 	return CORSConfig{
@@ -95,28 +105,27 @@ func CORSWithConfig(config CORSConfig) zen.HandlerFunc {
 
 		// Setting cors header
 		header := c.Writer.Header()
-		// TODO: define headers as constants
-		header.Set("Access-Control-Allow-Origin", allowOrigin)
+		header.Set(AccessControlAllowOrigin, allowOrigin)
 
 		// handling preflight request
 		if c.Request.Method == http.MethodOptions {
-			header.Set("Access-Control-Allow-Methods", allowMethods)
+			header.Set(AccessControlAllowMethods, allowMethods)
 
 			if allowHeaders != "" {
-				header.Set("Access-Control-Allow-Headers", allowHeaders)
+				header.Set(AccessControlAllowHeaders, allowHeaders)
 			} else {
-				requestHeaders := c.Request.Header.Get("Access-Control-Request-Headers")
+				requestHeaders := c.Request.Header.Get(AccessControlRequestHeaders)
 				if requestHeaders != "" {
-					header.Set("Access-Control-Allow-Headers", requestHeaders)
+					header.Set(AccessControlAllowHeaders, requestHeaders)
 				}
 			}
 
 			if config.MaxAge > 0 {
-				header.Set("Access-Control-Max-Age", string(rune(config.MaxAge)))
+				header.Set(AccesControlMaxAge, string(rune(config.MaxAge)))
 			}
 
 			if config.AllowCredentials {
-				header.Set("Access-Control-Allow-Credentials", "true")
+				header.Set(AccessControlAllowCredentials, "true")
 			}
 
 			c.Status(http.StatusNoContent)
@@ -124,11 +133,11 @@ func CORSWithConfig(config CORSConfig) zen.HandlerFunc {
 
 		// handling the actual request
 		if exposeHeaders != "" {
-			header.Set("Access-Control-Expose-Headers", exposeHeaders)
+			header.Set(AccessControlExposeHeaders, exposeHeaders)
 		}
 
 		if config.AllowCredentials {
-			header.Set("Access-Control-Allow-Credentials", "true")
+			header.Set(AccessControlAllowCredentials, "true")
 		}
 
 		c.Next()

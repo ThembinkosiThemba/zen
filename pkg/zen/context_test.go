@@ -147,7 +147,7 @@ func TestContext_BindJSON(t *testing.T) {
 			c := NewContext(httptest.NewRecorder(), req)
 
 			var result testStruct
-			err := c.BindJSON(&result)
+			err := c.ParseJSON(&result)
 
 			if err != tt.wantErr {
 				t.Errorf("BindJSON() error = %v, wantErr %v", err, tt.wantErr)
