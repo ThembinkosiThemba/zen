@@ -23,7 +23,7 @@ type Route struct {
 // New creates a new Engine instance
 func New() *Engine {
 	engine := &Engine{
-		router: newRouter(),
+		router: NewRouter(),
 	}
 	engine.RouterGroup = &RouterGroup{engine: engine}
 	engine.groups = []*RouterGroup{engine.RouterGroup}

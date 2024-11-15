@@ -284,6 +284,5 @@ func (c *Context) GetCookie(name string) (*http.Cookie, error) {
 
 // CustomContext returns custom context with 10 seconds timeout
 func (c *Context) CustomContext() (context.Context, context.CancelFunc) {
-	var ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
-	return ctx, cancel
+	return context.WithTimeout(context.Background(), 10*time.Second)
 }
