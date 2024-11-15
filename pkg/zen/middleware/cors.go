@@ -2,12 +2,15 @@ package middleware
 
 import (
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ThembinkosiThemba/zen/pkg/zen"
 )
 
 // CORSConfig defines the config for CORS middleware
+// It allows fine-grained control over Cross-Origin Resource Sharing behavior.
 type CORSConfig struct {
 	// AllowOrigins defines the origins that are allowed
 	// Default is ["*"] which allow all origins
@@ -17,30 +20,39 @@ type CORSConfig struct {
 	// Default is [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
 	AllowMethods []string
 
-	// AllowHeaders  defines the headers that are allowed.
+	// AllowHeaders defines the headers that can be used when making the actual request.
+	// Default is [] which allows all headers that are requested.
+	// Example: ["Content-Type", "Authorization"]
 	AllowHeaders []string
 
-	// AllowCredentials indicates whether the request can include user credentials
-	// Default is false
+	// AllowCredentials indicates whether the response to the request can be exposed
+	// when the credentials flag is true.
+	// Default is false.
+	// WARNING: Setting this to true can lead to security vulnerabilities if AllowOrigins is ["*"].
 	AllowCredentials bool
 
-	// ExposeHeaders defines the headers that are safe to expose
-	// Default is []
+	// ExposeHeaders defines the headers that are safe to expose to the API of a
+	// CORS API specification.
+	// Default is [].
+	// Example: ["Content-Length", "X-Custom-Header"]
 	ExposeHeaders []string
 
 	// MaxAge indicates how long the results of a preflight request can be cached
-	// Default is 0
+	// Default is 0 which means no caching.
+	// Example: 3600 (1 hour)
 	MaxAge int
 }
 
+// Cors header constants
 const (
 	AccessControlAllowOrigin      = "Access-Control-Allow-Origin"
 	AccessControlAllowMethods     = "Access-Control-Allow-Methods"
 	AccessControlAllowHeaders     = "Access-Control-Allow-Headers"
-	AccesControlMaxAge            = "Access-Control-Max-Age"
+	AccessControlMaxAge           = "Access-Control-Max-Age"
 	AccessControlAllowCredentials = "Access-Control-Allow-Credentials"
 	AccessControlRequestHeaders   = "Access-Control-Request-Headers"
 	AccessControlExposeHeaders    = "Access-Control-Expose-Headers"
+	Vary                          = "Vary"
 )
 
 // DefaultCORSConfig returns the default CORS configuration
@@ -56,10 +68,10 @@ func DefaultCORSConfig() CORSConfig {
 			http.MethodHead,
 			http.MethodOptions,
 		},
-		AllowHeaders:     []string{},
+		AllowHeaders:     []string{"Origin"},
 		AllowCredentials: false,
 		ExposeHeaders:    []string{},
-		MaxAge:           0,
+		MaxAge:           int(12 * time.Hour.Seconds()), // 12 hours
 	}
 }
 
@@ -70,76 +82,121 @@ func DefaultCors() zen.HandlerFunc {
 
 // CORSWithConfig returns the CORS middleware with custom config
 func CORSWithConfig(config CORSConfig) zen.HandlerFunc {
-	// we should use the default config is some fields are empty
+	// normalize and validate the configuration
+	normalizeConfig(&config)
+
+	allowMethods := strings.Join(config.AllowMethods, ",")
+	allowHeaders := strings.Join(config.AllowHeaders, ",")
+	exposeHeaders := strings.Join(config.ExposeHeaders, ",")
+	maxAge := strconv.Itoa(config.MaxAge)
+
+	return func(c *zen.Context) {
+		origin := c.GetHeader("Origin")
+
+		if origin == ""{
+			c.Next()
+			return
+		}
+
+		// preflight
+		if c.Request.Method == http.MethodOptions {
+			handlePreflight(c, config, origin, allowMethods, allowHeaders, maxAge)
+			return
+		}
+
+		// handling actual requests
+		handleActualRequests(c, config, origin, exposeHeaders)
+	}
+}
+
+// handlePreflight processes CORS preflight requests
+func handlePreflight(c *zen.Context, config CORSConfig, origin, allowMethods, allowHeaders, maxAge string) {
+	allowOrigin := getAllowOrigin(origin, config.AllowOrigins)
+
+	c.SetHeader(AccessControlAllowOrigin, allowOrigin)
+	c.SetHeader(AccessControlAllowMethods, allowMethods)
+
+	if allowOrigin != "*" {
+		c.SetHeader(Vary, "Origin")
+	}
+
+	if allowHeaders != "" {
+		c.SetHeader(AccessControlAllowHeaders, allowHeaders)
+	} else {
+		requestHeaders := c.Request.Header.Get(AccessControlRequestHeaders)
+		if requestHeaders != "" {
+			c.SetHeader(AccessControlAllowHeaders, requestHeaders)
+		}
+	}
+
+	if config.MaxAge > 0 {
+		c.SetHeader(AccessControlMaxAge, maxAge)
+	}
+
+	if config.AllowCredentials {
+		c.SetHeader(AccessControlAllowCredentials, "true")
+	}
+
+	c.Status(http.StatusNoContent)
+}
+
+// handleActualRequests processes CORS actual requests
+func handleActualRequests(c *zen.Context, config CORSConfig, origin, exposeHeaders string) {
+	allowOrigin := getAllowOrigin(origin, config.AllowOrigins)
+
+	c.SetHeader(AccessControlAllowOrigin, allowOrigin)
+
+	if allowOrigin != "*" {
+		c.SetHeader(Vary, "Origin")
+	}
+
+	if exposeHeaders != "" {
+		c.SetHeader(AccessControlExposeHeaders, exposeHeaders)
+	}
+
+	if config.AllowCredentials {
+		c.SetHeader(AccessControlAllowCredentials, "true")
+	}
+}
+
+// getAllowOrigin determines the appropriate Allow-Origin header value
+func getAllowOrigin(origin string, allowOrigins []string) string {
+	if len(allowOrigins) == 1 && allowOrigins[0] == "*" {
+		return "*"
+	}
+
+	for _, allowOrigin := range allowOrigins {
+		if allowOrigin == origin {
+			return origin
+		}
+	}
+
+	return ""
+}
+
+// normalizeConfig ensures the configuration has valid values
+func normalizeConfig(config *CORSConfig) {
 	if len(config.AllowMethods) == 0 {
-		config.AllowMethods = DefaultCORSConfig().AllowOrigins
+		config.AllowMethods = DefaultCORSConfig().AllowMethods
 	}
 
 	if len(config.AllowOrigins) == 0 {
 		config.AllowOrigins = DefaultCORSConfig().AllowOrigins
 	}
 
-	allowMethods := strings.Join(config.AllowMethods, ",")
-	allowHeaders := strings.Join(config.AllowHeaders, ",")
-	exposeHeaders := strings.Join(config.ExposeHeaders, ",")
-
-	return func(c *zen.Context) {
-		origin := c.Request.Header.Get("Origin")
-
-		// if no origin header is present, skip it
-		if origin == "" {
-			c.Next()
-			return
-		}
-
-		// now, we check if origin is allowed
-		allowOrigin := "*"
-		if len(config.AllowOrigins) != 1 || config.AllowOrigins[0] != "*" {
-			for _, o := range config.AllowOrigins {
-				if o == origin {
-					allowOrigin = origin
-					break
-				}
-			}
-		}
-
-		// Setting cors header
-		header := c.Writer.Header()
-		header.Set(AccessControlAllowOrigin, allowOrigin)
-
-		// handling preflight request
-		if c.Request.Method == http.MethodOptions {
-			header.Set(AccessControlAllowMethods, allowMethods)
-
-			if allowHeaders != "" {
-				header.Set(AccessControlAllowHeaders, allowHeaders)
-			} else {
-				requestHeaders := c.Request.Header.Get(AccessControlRequestHeaders)
-				if requestHeaders != "" {
-					header.Set(AccessControlAllowHeaders, requestHeaders)
-				}
-			}
-
-			if config.MaxAge > 0 {
-				header.Set(AccesControlMaxAge, string(rune(config.MaxAge)))
-			}
-
-			if config.AllowCredentials {
-				header.Set(AccessControlAllowCredentials, "true")
-			}
-
-			c.Status(http.StatusNoContent)
-		}
-
-		// handling the actual request
-		if exposeHeaders != "" {
-			header.Set(AccessControlExposeHeaders, exposeHeaders)
-		}
-
-		if config.AllowCredentials {
-			header.Set(AccessControlAllowCredentials, "true")
-		}
-
-		c.Next()
+	// Validate AllowCredentials
+	if config.AllowCredentials && contains(config.AllowOrigins, "*") {
+		config.AllowOrigins = DefaultCORSConfig().AllowOrigins
+		config.AllowCredentials = false // for security
 	}
+}
+
+// contains checks if a string slice contains a specific value
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
 }

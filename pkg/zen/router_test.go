@@ -7,7 +7,7 @@ import (
 )
 
 func TestRouter_Basic(t *testing.T) {
-	router := newRouter()
+	router := NewRouter()
 	if router.handlers == nil {
 		t.Error("router handlers should be initialised")
 	}
@@ -15,7 +15,7 @@ func TestRouter_Basic(t *testing.T) {
 
 func TestRouterGroup_AddRoute(t *testing.T) {
 	engine := New()
-	group := engine.Group("/api")
+	group := engine.GroupRoutes("/api")
 
 	handlerCalled := false
 	handler := func(c *Context) {
@@ -44,7 +44,7 @@ func TestRouterGroup_AddRoute(t *testing.T) {
 
 func TestRouterGroup_Middleware(t *testing.T) {
 	engine := New()
-	group := engine.Group("/api")
+	group := engine.GroupRoutes("/api")
 
 	middlewareCalled := false
 	middleware := func(c *Context) {
@@ -155,7 +155,7 @@ func TestRouter_HandleMethods(t *testing.T) {
 			}
 
 			// Register the route using the appropriate method
-			group := engine.Group("")
+			group := engine.GroupRoutes("")
 			switch method {
 			case "GET":
 				group.GET("/test", handler)

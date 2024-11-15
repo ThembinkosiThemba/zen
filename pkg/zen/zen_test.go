@@ -172,8 +172,8 @@ func TestEngine_GroupRoutes(t *testing.T) {
 	engine := New()
 
 	// Create groups with different prefixes
-	apiV1 := engine.Group("/api/v1")
-	apiV2 := engine.Group("/api/v2")
+	apiV1 := engine.GroupRoutes("/api/v1")
+	apiV2 := engine.GroupRoutes("/api/v2")
 
 	// Add routes to groups
 	apiV1.GET("/users", func(c *Context) {})
@@ -212,9 +212,9 @@ func TestEngine_NestedGroups(t *testing.T) {
 	engine := New()
 
 	// Create nested groups
-	api := engine.Group("/api")
-	v1 := api.Group("/v1")
-	users := v1.Group("/users")
+	api := engine.GroupRoutes("/api")
+	v1 := api.GroupRoutes("/v1")
+	users := v1.GroupRoutes("/users")
 
 	handlerCalled := false
 	users.GET("/:id", func(c *Context) {
