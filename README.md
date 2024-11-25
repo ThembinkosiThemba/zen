@@ -1,6 +1,6 @@
 # Zen Web Framework
 
-Zen is a lightweight and fast HTTP framework for Go, focusing on simplicity and performance while providing enterprise-grade features for modern web applications.
+Zen is a lightweight and fast HTTP framework for Go, focusing on simplicity and performance while providing enterprise-grade features for modern web applications. Zen has a security-first focus providing a range of middleware such as authentication, ratelimiting and api gateways.
 
 <p align="start">
     <img src="./docs/assets/zen.png" alt="zen" />
@@ -12,8 +12,9 @@ Zen is a lightweight and fast HTTP framework for Go, focusing on simplicity and 
 - 🛡️ Comprehensive Middleware Support
   - Authentication (JWT-based)
   - CORS Management
-  - Rate Limiting
-  - Security Headers & Protections
+  - Rate Limiting (beta)
+  - Security Headers & Protections (beta)
+  - API gateway (beta)
 - 🎯 Simple & Intuitive Routing
 - 📝 Request Logging
 - ⚡ Hot Reloading for Development
@@ -101,9 +102,11 @@ corsConfig := middleware.CORSConfig{
 app.Use(middleware.CORSWithConfig(corsConfig))
 ```
 
-### Rate Limiter Middleware
+Support for other authentication strategies will be added including `oauth`, `csrf-protection`, `sessions` and more.
 
-Protect your APIs with sophisticated rate limiting:
+### Rate Limiter Middleware:
+
+Zen also comes pre-built will rate-limiting strategies to prevent your applications against resource abuse and attatcks.
 
 ```go
 rateConfig := middleware.RateLimitConfig{
