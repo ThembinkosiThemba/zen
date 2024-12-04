@@ -23,7 +23,7 @@ func main() {
 	// Enable logging to file with default path (logs/zen.log)
 	app.Use(middleware.Logger(middleware.LoggerConfig{
 		LogToFile:   true,
-		LogFilePath: "logs/zen2.log",
+		LogFilePath: "logs/zen.log",
 	}))
 
 	// define simple routes

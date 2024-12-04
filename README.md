@@ -1,6 +1,14 @@
-# Zen Web Framework
+# Zen
+
+> ⚠️ **Development Mode**: This project is currently in active development. Features and usage guides may change.
 
 Zen is a lightweight and fast HTTP framework for Go, focusing on simplicity and performance while providing enterprise-grade features for modern web applications. Zen has a security-first focus providing a range of middleware such as authentication, ratelimiting and api gateways.
+
+![go version](https://img.shields.io/badge/go-%3E%3D1.18-blue)
+![version](https://img.shields.io/badge/version-v0.1.3-blue)
+![license](https://img.shields.io/badge/license-MIT-green)
+
+> All important tools in one project, which makes it ideal.
 
 <p align="start">
     <img src="./docs/assets/zen.png" alt="zen" />
