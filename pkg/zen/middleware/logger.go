@@ -148,7 +148,7 @@ func initFileLogger(cfg LoggerConfig) error {
 		logFile = file
 		fileLogger = log.New(file, "", log.LstdFlags)
 		log.Printf("Initialized file logger at: %s", cfg.LogFilePath)
-	
+
 		setupCleanup()
 	})
 

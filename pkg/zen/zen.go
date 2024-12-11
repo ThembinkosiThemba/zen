@@ -2,7 +2,9 @@ package zen
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -32,29 +34,80 @@ func New() *Engine {
 
 // Run starts the HTTP server
 func (engine *Engine) Serve(addr string) error {
+	port, err := checkPort(addr)
+	if err != nil {
+		return fmt.Errorf("port check failed: %v", err)
+	}
+
+	newAddr := fmt.Sprintf(":%d", port)
+	if strings.Contains(addr, ":") {
+		host, _, _ := net.SplitHostPort(addr)
+		if host != "" {
+			newAddr = fmt.Sprintf("%s:%d", host, port)
+		}
+	}
+
+	if newAddr != addr {
+		fmt.Printf("Port %s was in use. Using port %d instead.\n", addr, port)
+	}
+
 	engine.printRoutes()
-	fmt.Print(engine.zenAsciiArt(addr))
-	return http.ListenAndServe(addr, engine)
+	fmt.Print(engine.zenAsciiArt(newAddr))
+	return http.ListenAndServe(newAddr, engine)
 }
 
 // ServeTLS start the HTTPS server
 func (engine *Engine) ServeTLS(addr, certFile, keyFile string) error {
+	port, err := checkPort(addr)
+	if err != nil {
+		return fmt.Errorf("port check failed: %v", err)
+	}
+
+	newAddr := fmt.Sprintf("%d", port)
+	if strings.Contains(addr, ":") {
+		host, _, _ := net.SplitHostPort(addr)
+		if host != "" {
+			newAddr = fmt.Sprintf("%s:%d", host, port)
+		}
+	}
+
+	if newAddr != addr {
+		fmt.Printf("Port %s was in use. Using port %d instead.\n", addr, port)
+	}
+
 	engine.printRoutes()
-	fmt.Print(engine.zenAsciiArt(addr))
-	return http.ListenAndServeTLS(addr, certFile, keyFile, engine)
+	fmt.Print(engine.zenAsciiArt(newAddr))
+	return http.ListenAndServeTLS(newAddr, certFile, keyFile, engine)
 }
 
 // ServeWithTimeout starts the HTTP server with timeout settings
 func (engine *Engine) ServeWithTimeout(addr string, timeout time.Duration) error {
+	port, err := checkPort(addr)
+	if err != nil {
+		return fmt.Errorf("port check failed: %v", err)
+	}
+
+	newAddr := fmt.Sprintf("%d", port)
+	if strings.Contains(addr, ":") {
+		host, _, _ := net.SplitHostPort(addr)
+		if host != "" {
+			newAddr = fmt.Sprintf("%s:%d", host, port)
+		}
+	}
+
+	if newAddr != addr {
+		fmt.Printf("Port %s was in use. Using port %d instead.\n", addr, port)
+	}
+
 	srv := &http.Server{
-		Addr:         addr,
+		Addr:         newAddr,
 		Handler:      engine,
 		ReadTimeout:  timeout,
 		WriteTimeout: timeout,
 		IdleTimeout:  timeout * 2,
 	}
 	engine.printRoutes()
-	fmt.Print(engine.zenAsciiArt(addr))
+	fmt.Print(engine.zenAsciiArt(newAddr))
 	return srv.ListenAndServe()
 }
 
@@ -95,4 +148,30 @@ func (engine *Engine) Routes() []Route {
 	}
 
 	return routes
+}
+
+func checkPort(addr string) (int, error) {
+	_, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid port number: %v", err)
+	}
+
+	port := 0
+	_, err = fmt.Sscanf(portStr, "%d", &port)
+	if err != nil {
+		return 0, fmt.Errorf("invalid port number: %v", err)
+	}
+
+	for {
+		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+		if err != nil {
+			if strings.Contains(err.Error(), "address already in use") {
+				port++
+				continue
+			}
+			return 0, err
+		}
+		listener.Close()
+		return port, nil
+	}
 }
