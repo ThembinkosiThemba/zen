@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -83,7 +82,6 @@ func DefaultCors() zen.HandlerFunc {
 
 // CORSWithConfig returns the CORS middleware with custom config
 func CORSWithConfig(config CORSConfig) zen.HandlerFunc {
-	log.Println("Here in CORS With COnfig")
 	// normalize and validate the configuration
 	normalizeConfig(&config)
 
@@ -116,8 +114,6 @@ func CORSWithConfig(config CORSConfig) zen.HandlerFunc {
 
 		// preflight
 		if c.Request.Method == http.MethodOptions {
-			log.Printf("Handling OPTIONS request from origin: %s", origin)
-
 			c.SetHeader(AccessControlAllowMethods, allowMethods)
 
 			requestHeaders := c.GetHeader(AccessControlRequestHeaders)

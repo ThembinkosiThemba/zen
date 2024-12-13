@@ -22,8 +22,6 @@ func main() {
 		MaxAge:           3600,
 	}
 
-	log.Printf("Initializing middleware...")
-
 	corsMiddleware := middleware.CORSWithConfig(config)
 	app.Use(corsMiddleware)
 	app.Use(middleware.Recovery())

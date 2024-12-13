@@ -1,7 +1,6 @@
 package zen
 
 import (
-	"log"
 	"net/http"
 	"strings"
 )
@@ -45,7 +44,6 @@ func (group *RouterGroup) Use(middleware ...HandlerFunc) {
 }
 
 func (r *Router) handleOptions(c *Context) {
-	log.Printf("handleOptions: Processing OPTIONS request with %d global middleware", len(r.globalMiddleware))
 
 	handlers := make([]HandlerFunc, len(r.globalMiddleware))
 	copy(handlers, r.globalMiddleware)
@@ -65,9 +63,7 @@ func (r *Router) handleOptions(c *Context) {
 // These middlewares will be executed for all routes in the application.
 // Middleware functions are executed in the order they are added.
 func (r *Router) Use(middleware ...HandlerFunc) {
-	log.Printf("Adding %d middleware functions to global middleware stack", len(middleware))
 	r.globalMiddleware = append(r.globalMiddleware, middleware...)
-	log.Printf("Global middleware stack now has %d handlers", len(r.globalMiddleware))
 }
 
 // GroupRoutes creates a new RouterGroup with the given URL prefix.
@@ -161,11 +157,7 @@ func (r *Router) handle(c *Context) {
 	method := c.Request.Method
 	path := c.Request.URL.Path
 
-	log.Printf("Router.handle: Received %s request to %s", method, path)
-	log.Printf("Router.handle: Global middleware count: %d", len(r.globalMiddleware))
-
 	if method == http.MethodOptions {
-		log.Printf("Router.handle: Handling OPTIONS request, will execute %d global middleware", len(r.globalMiddleware))
 		r.handleOptions(c)
 		return
 	}

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"time"
 )
@@ -41,7 +40,6 @@ func NewContext(w http.ResponseWriter, req *http.Request) *Context {
 func (c *Context) Next() {
 	c.Index++                       // move to the next handler
 	for c.Index < len(c.Handlers) { // continue while there are handles left
-		log.Printf("Executing middleware at index %d", c.Index)
 		c.Handlers[c.Index](c) // execute current handler
 		c.Index++              // move to the next one
 	}
