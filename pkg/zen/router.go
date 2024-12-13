@@ -1,6 +1,7 @@
 package zen
 
 import (
+	"log"
 	"net/http"
 	"strings"
 )
@@ -40,13 +41,33 @@ func NewRouter() *Router {
 // and its subgroups.
 func (group *RouterGroup) Use(middleware ...HandlerFunc) {
 	group.middlewares = append(group.middlewares, middleware...)
+	group.engine.router.Use(middleware...)
+}
+
+func (r *Router) handleOptions(c *Context) {
+	log.Printf("handleOptions: Processing OPTIONS request with %d global middleware", len(r.globalMiddleware))
+
+	handlers := make([]HandlerFunc, len(r.globalMiddleware))
+	copy(handlers, r.globalMiddleware)
+
+	c.Handlers = handlers
+	c.Index = -1
+
+	c.Next()
+
+	// Only set 404 if no response was written by middleware
+	if c.Writer.Status() == 0 {
+		c.Text(http.StatusNoContent, "")
+	}
 }
 
 // Use adds middleware functions to the global middleware stack.
 // These middlewares will be executed for all routes in the application.
 // Middleware functions are executed in the order they are added.
 func (r *Router) Use(middleware ...HandlerFunc) {
+	log.Printf("Adding %d middleware functions to global middleware stack", len(middleware))
 	r.globalMiddleware = append(r.globalMiddleware, middleware...)
+	log.Printf("Global middleware stack now has %d handlers", len(r.globalMiddleware))
 }
 
 // GroupRoutes creates a new RouterGroup with the given URL prefix.
@@ -140,15 +161,39 @@ func (r *Router) handle(c *Context) {
 	method := c.Request.Method
 	path := c.Request.URL.Path
 
+	log.Printf("Router.handle: Received %s request to %s", method, path)
+	log.Printf("Router.handle: Global middleware count: %d", len(r.globalMiddleware))
+
+	if method == http.MethodOptions {
+		log.Printf("Router.handle: Handling OPTIONS request, will execute %d global middleware", len(r.globalMiddleware))
+		r.handleOptions(c)
+		return
+	}
+
 	if methodHandlers := r.handlers[method]; methodHandlers != nil {
 		for pattern, handlers := range methodHandlers {
 			if params, ok := matchPath(pattern, path); ok {
 				c.Params = params
-				c.Handlers = handlers
+				// Combine global middleware with route handlers
+				allHandlers := make([]HandlerFunc, len(r.globalMiddleware)+len(handlers))
+				copy(allHandlers, r.globalMiddleware)
+				copy(allHandlers[len(r.globalMiddleware):], handlers)
+				c.Handlers = allHandlers
 				c.Next()
 				return
 			}
 		}
+	}
+
+	// If no route matches, still execute global middleware
+	if len(r.globalMiddleware) > 0 {
+		c.Handlers = r.globalMiddleware
+		c.Next()
+		// Only set 404 if no response was written by middleware
+		if c.Writer.Status() == 0 {
+			c.Text(http.StatusNotFound, "404 NOT FOUND")
+		}
+		return
 	}
 
 	c.Text(http.StatusNotFound, "404 NOT FOUND")

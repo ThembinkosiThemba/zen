@@ -131,7 +131,9 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	engine.router.handle(c)
 }
 
+// Use adds middleware to the engine's global middleware stack
 func (engine *Engine) Use(middlewares ...HandlerFunc) {
+	engine.router.Use(middlewares...)
 	engine.RouterGroup.Use(middlewares...)
 }
 

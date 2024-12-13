@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -68,7 +69,7 @@ func DefaultCORSConfig() CORSConfig {
 			http.MethodHead,
 			http.MethodOptions,
 		},
-		AllowHeaders:     []string{"Origin"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
 		AllowCredentials: false,
 		ExposeHeaders:    []string{},
 		MaxAge:           int(12 * time.Hour.Seconds()), // 12 hours
@@ -82,6 +83,7 @@ func DefaultCors() zen.HandlerFunc {
 
 // CORSWithConfig returns the CORS middleware with custom config
 func CORSWithConfig(config CORSConfig) zen.HandlerFunc {
+	log.Println("Here in CORS With COnfig")
 	// normalize and validate the configuration
 	normalizeConfig(&config)
 
@@ -93,69 +95,54 @@ func CORSWithConfig(config CORSConfig) zen.HandlerFunc {
 	return func(c *zen.Context) {
 		origin := c.GetHeader("Origin")
 
-		if origin == ""{
+		if origin == "" {
 			c.Next()
 			return
 		}
 
-		// preflight
-		if c.Request.Method == http.MethodOptions {
-			handlePreflight(c, config, origin, allowMethods, allowHeaders, maxAge)
+		c.SetHeader(Vary, "Origin")
+
+		allowOrigin := getAllowOrigin(origin, config.AllowOrigins)
+		if allowOrigin == "" {
+			c.Status(http.StatusForbidden)
 			return
 		}
 
-		// handling actual requests
-		handleActualRequests(c, config, origin, exposeHeaders)
-	}
-}
+		c.SetHeader(AccessControlAllowOrigin, allowOrigin)
 
-// handlePreflight processes CORS preflight requests
-func handlePreflight(c *zen.Context, config CORSConfig, origin, allowMethods, allowHeaders, maxAge string) {
-	allowOrigin := getAllowOrigin(origin, config.AllowOrigins)
-
-	c.SetHeader(AccessControlAllowOrigin, allowOrigin)
-	c.SetHeader(AccessControlAllowMethods, allowMethods)
-
-	if allowOrigin != "*" {
-		c.SetHeader(Vary, "Origin")
-	}
-
-	if allowHeaders != "" {
-		c.SetHeader(AccessControlAllowHeaders, allowHeaders)
-	} else {
-		requestHeaders := c.Request.Header.Get(AccessControlRequestHeaders)
-		if requestHeaders != "" {
-			c.SetHeader(AccessControlAllowHeaders, requestHeaders)
+		if config.AllowCredentials {
+			c.SetHeader(AccessControlAllowCredentials, "true")
 		}
-	}
 
-	if config.MaxAge > 0 {
-		c.SetHeader(AccessControlMaxAge, maxAge)
-	}
+		// preflight
+		if c.Request.Method == http.MethodOptions {
+			log.Printf("Handling OPTIONS request from origin: %s", origin)
 
-	if config.AllowCredentials {
-		c.SetHeader(AccessControlAllowCredentials, "true")
-	}
+			c.SetHeader(AccessControlAllowMethods, allowMethods)
 
-	c.Status(http.StatusNoContent)
-}
+			requestHeaders := c.GetHeader(AccessControlRequestHeaders)
+			if requestHeaders != "" {
+				if allowHeaders != "" {
+					c.SetHeader(AccessControlAllowHeaders, allowHeaders)
+				} else {
+					c.SetHeader(AccessControlAllowHeaders, requestHeaders)
+				}
+			}
 
-// handleActualRequests processes CORS actual requests
-func handleActualRequests(c *zen.Context, config CORSConfig, origin, exposeHeaders string) {
-	allowOrigin := getAllowOrigin(origin, config.AllowOrigins)
+			if config.MaxAge > 0 {
+				c.SetHeader(AccessControlMaxAge, maxAge)
+			}
 
-	c.SetHeader(AccessControlAllowOrigin, allowOrigin)
+			c.Status(http.StatusNoContent)
+			return
 
-	if allowOrigin != "*" {
-		c.SetHeader(Vary, "Origin")
-	}
+		}
 
-	if exposeHeaders != "" {
-		c.SetHeader(AccessControlExposeHeaders, exposeHeaders)
-	}
+		if exposeHeaders != "" {
+			c.SetHeader(AccessControlExposeHeaders, exposeHeaders)
+		}
 
-	if config.AllowCredentials {
-		c.SetHeader(AccessControlAllowCredentials, "true")
+		c.Next()
 	}
 }
 
