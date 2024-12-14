@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -77,6 +78,7 @@ func DefaultCORSConfig() CORSConfig {
 
 // DefaultCors returns the CORS middleware with default configs
 func DefaultCors() zen.HandlerFunc {
+	log.Printf("Using default cors configuration with wildcard on origin (*)")
 	return CORSWithConfig(DefaultCORSConfig())
 }
 

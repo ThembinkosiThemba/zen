@@ -40,7 +40,7 @@ func NewRouter() *Router {
 // and its subgroups.
 func (group *RouterGroup) Use(middleware ...HandlerFunc) {
 	group.middlewares = append(group.middlewares, middleware...)
-	group.engine.router.Use(middleware...)
+	// group.engine.router.Use(middleware...)
 }
 
 func (r *Router) handleOptions(c *Context) {
@@ -167,10 +167,10 @@ func (r *Router) handle(c *Context) {
 			if params, ok := matchPath(pattern, path); ok {
 				c.Params = params
 				// Combine global middleware with route handlers
-				allHandlers := make([]HandlerFunc, len(r.globalMiddleware)+len(handlers))
-				copy(allHandlers, r.globalMiddleware)
-				copy(allHandlers[len(r.globalMiddleware):], handlers)
-				c.Handlers = allHandlers
+				// allHandlers := make([]HandlerFunc, len(r.globalMiddleware)+len(handlers))
+				// copy(allHandlers, r.globalMiddleware)
+				// copy(allHandlers[len(r.globalMiddleware):], handlers)
+				c.Handlers = handlers
 				c.Next()
 				return
 			}

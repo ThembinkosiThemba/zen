@@ -19,15 +19,15 @@ The Logger middleware for Zen framework provides request logging capabilities wi
 ```go
 func main() {
     app := zen.New()
-    
+
     // Use default logger (console only)
-    app.Use(middleware.Logger())
-    
+    app.Use(zen.Logger())
+
     // Use logger with file logging enabled
-    app.Use(middleware.Logger(middleware.LoggerConfig{
+    app.Use(zen.Logger(zen.LoggerConfig{
         LogToFile: true,  // Logs will be written to logs/zen.log
     }))
-    
+
     app.Serve(":8080")
 }
 ```
@@ -37,8 +37,8 @@ func main() {
 ```go
 func main() {
     app := zen.New()
-    
-    config := middleware.LoggerConfig{
+
+    config := zen.LoggerConfig{
         SkipPaths: []string{"/health", "/metrics"},
         LogToFile: true,
         LogFilePath: "custom/path/api.log",
@@ -50,25 +50,26 @@ func main() {
             )
         },
     }
-    
-    app.Use(middleware.Logger(config))
-    
+
+    app.Use(zen.Logger(config))
+
     app.Serve(":8080")
 }
 ```
 
 ## Configuration Options
 
-| Option | Type | Description | Default |
-|--------|------|-------------|---------|
-| SkipPaths | []string | Paths to skip logging | [] |
-| Formatter | func(*Context, time.Duration) string | Custom log format function | nil |
-| LogToFile | bool | Enable/disable file logging | false |
-| LogFilePath | string | Path to log file | "logs/zen.log" |
+| Option      | Type                                  | Description                 | Default        |
+| ----------- | ------------------------------------- | --------------------------- | -------------- |
+| SkipPaths   | []string                              | Paths to skip logging       | []             |
+| Formatter   | func(\*Context, time.Duration) string | Custom log format function  | nil            |
+| LogToFile   | bool                                  | Enable/disable file logging | false          |
+| LogFilePath | string                                | Path to log file            | "logs/zen.log" |
 
 ## Log Output Format
 
 Default log format includes:
+
 - Timestamp
 - Status code (colored in console)
 - Latency
@@ -77,11 +78,13 @@ Default log format includes:
 - Request path
 
 Console output example:
+
 ```
 [ZEN] 2024/01/02 - 15:04:05 | 200 | 13.45ms | 192.168.1.1 | GET /api/users
 ```
 
 File output example:
+
 ```
 2024/01/02 15:04:05 200 | 13.45ms | 192.168.1.1 | GET /api/users
 ```
@@ -89,7 +92,7 @@ File output example:
 ## Custom Formatting Example
 
 ```go
-config := middleware.LoggerConfig{
+config := zen.LoggerConfig{
     LogToFile: true,
     LogFilePath: "api.log",
     Formatter: func(c *zen.Context, latency time.Duration) string {
@@ -100,5 +103,5 @@ config := middleware.LoggerConfig{
         )
     },
 }
-app.Use(middleware.Logger(config))
+app.Use(zen.Logger(config))
 ```

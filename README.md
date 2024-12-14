@@ -52,10 +52,10 @@ func main() {
 
     // Global middleware
     app.Use(
-        middleware.Logger(),           // Request logging
+        zen.Logger(),                    // Request logging
         middleware.SecurityMiddleware(), // Security features
-        middleware.DefaultCors(),      // CORS protection
-        middleware.RateLimiter(),      // API rate limiting
+        middleware.DefaultCors(),        // CORS protection
+        middleware.RateLimiter(),        // API rate limiting
     )
 
     // Basic routes
@@ -206,7 +206,7 @@ func main() {
 
     // Apply middleware
     app.Use(
-        middleware.Logger(),
+        zen.Logger(),
         middleware.SecurityMiddleware(securityConfig),
         middleware.CORSWithConfig(corsConfig),
         middleware.RateLimiterMiddleware(rateConfig),

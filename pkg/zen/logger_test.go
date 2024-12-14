@@ -1,4 +1,4 @@
-package middleware
+package zen
 
 import (
 	"bytes"
@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ThembinkosiThemba/zen/pkg/zen"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -90,7 +89,7 @@ func TestLogger(t *testing.T) {
 			r := httptest.NewRequest(tt.method, url, nil)
 
 			// Create context and run middleware
-			c := zen.NewContext(w, r)
+			c := NewContext(w, r)
 			handler := Logger(tt.config)
 
 			if strings.Contains(tt.path, "error") {
@@ -124,7 +123,7 @@ func TestLoggerCleanup(t *testing.T) {
 	// Create and process a test request
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/test", nil)
-	c := zen.NewContext(w, r)
+	c := NewContext(w, r)
 	handler(c)
 
 	// Verify file exists
@@ -156,7 +155,7 @@ func TestLoggerSignalHandling(t *testing.T) {
 	// Create and process a test request
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "/test", nil)
-	c := zen.NewContext(w, r)
+	c := NewContext(w, r)
 	handler(c)
 
 	// Wait for file operations
@@ -192,7 +191,7 @@ func TestLoggerWithCustomIP(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
 	r.Header.Set("X-Real-IP", "1.2.3.4")
 
-	c := zen.NewContext(w, r)
+	c := NewContext(w, r)
 	handler := Logger()
 	handler(c)
 
@@ -223,7 +222,7 @@ func TestLoggerWithSkipPaths(t *testing.T) {
 			// Create test request
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodGet, tt.path, nil)
-			c := zen.NewContext(w, r)
+			c := NewContext(w, r)
 
 			handler := Logger(config)
 			handler(c)

@@ -2,6 +2,7 @@ package zen
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -27,13 +28,14 @@ func New() *Engine {
 	engine := &Engine{
 		router: NewRouter(),
 	}
+
 	engine.RouterGroup = &RouterGroup{engine: engine}
 	engine.groups = []*RouterGroup{engine.RouterGroup}
 	return engine
 }
 
 // Run starts the HTTP server
-func (engine *Engine) Serve(addr string) error {
+func (e *Engine) Serve(addr string) error {
 	port, err := checkPort(addr)
 	if err != nil {
 		return fmt.Errorf("port check failed: %v", err)
@@ -48,16 +50,16 @@ func (engine *Engine) Serve(addr string) error {
 	}
 
 	if newAddr != addr {
-		fmt.Printf("Port %s was in use. Using port %d instead.\n", addr, port)
+		log.Printf("Port %s was in use. Using port %d instead", addr, port)
 	}
 
-	engine.printRoutes()
-	fmt.Print(engine.zenAsciiArt(newAddr))
-	return http.ListenAndServe(newAddr, engine)
+	e.printRoutes()
+	fmt.Print(e.zenAsciiArt(newAddr))
+	return http.ListenAndServe(newAddr, e)
 }
 
 // ServeTLS start the HTTPS server
-func (engine *Engine) ServeTLS(addr, certFile, keyFile string) error {
+func (e *Engine) ServeTLS(addr, certFile, keyFile string) error {
 	port, err := checkPort(addr)
 	if err != nil {
 		return fmt.Errorf("port check failed: %v", err)
@@ -72,16 +74,17 @@ func (engine *Engine) ServeTLS(addr, certFile, keyFile string) error {
 	}
 
 	if newAddr != addr {
-		fmt.Printf("Port %s was in use. Using port %d instead.\n", addr, port)
+		log.Printf("Port %s was in use. Using port %d instead", addr, port)
 	}
 
-	engine.printRoutes()
-	fmt.Print(engine.zenAsciiArt(newAddr))
-	return http.ListenAndServeTLS(newAddr, certFile, keyFile, engine)
+	e.printRoutes()
+	fmt.Print(e.zenAsciiArt(newAddr))
+	return http.ListenAndServeTLS(newAddr, certFile, keyFile, e)
 }
 
 // ServeWithTimeout starts the HTTP server with timeout settings
-func (engine *Engine) ServeWithTimeout(addr string, timeout time.Duration) error {
+// TODO: use custom logger
+func (e *Engine) ServeWithTimeout(addr string, timeout time.Duration) error {
 	port, err := checkPort(addr)
 	if err != nil {
 		return fmt.Errorf("port check failed: %v", err)
@@ -101,13 +104,13 @@ func (engine *Engine) ServeWithTimeout(addr string, timeout time.Duration) error
 
 	srv := &http.Server{
 		Addr:         newAddr,
-		Handler:      engine,
+		Handler:      e,
 		ReadTimeout:  timeout,
 		WriteTimeout: timeout,
 		IdleTimeout:  timeout * 2,
 	}
-	engine.printRoutes()
-	fmt.Print(engine.zenAsciiArt(newAddr))
+	e.printRoutes()
+	fmt.Print(e.zenAsciiArt(newAddr))
 	return srv.ListenAndServe()
 }
 
@@ -126,9 +129,9 @@ func (engine *Engine) Shutdown(timeout time.Duration) error {
 }
 
 // ServeHTTP implements the http.Handler interface
-func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (e *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	c := NewContext(w, req)
-	engine.router.handle(c)
+	e.router.handle(c)
 }
 
 // Use adds middleware to the engine's global middleware stack

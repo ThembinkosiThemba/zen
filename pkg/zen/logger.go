@@ -1,4 +1,4 @@
-package middleware
+package zen
 
 import (
 	"fmt"
@@ -9,11 +9,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/ThembinkosiThemba/zen/pkg/zen"
 )
-
-// TODO: custom flag for writing to a log file. All logs
 
 // logger configuration for the zen framework
 type LoggerConfig struct {
@@ -21,7 +17,7 @@ type LoggerConfig struct {
 	SkipPaths []string
 
 	// Custom log format function
-	Formatter func(*zen.Context, time.Duration) string
+	Formatter func(*Context, time.Duration) string
 
 	// Enable/diable file logging
 	LogToFile bool
@@ -45,7 +41,7 @@ func DefaultLoggerConfig() LoggerConfig {
 }
 
 // Logger middleware logs the incoming HTTP request details
-func Logger(config ...LoggerConfig) zen.HandlerFunc {
+func Logger(config ...LoggerConfig) HandlerFunc {
 	cfg := DefaultLoggerConfig()
 	if len(config) > 0 {
 		cfg = config[0]
@@ -58,7 +54,7 @@ func Logger(config ...LoggerConfig) zen.HandlerFunc {
 		}
 	}
 
-	return func(c *zen.Context) {
+	return func(c *Context) {
 		// Start timer
 		start := time.Now()
 		path := c.Request.URL.Path
@@ -84,15 +80,15 @@ func Logger(config ...LoggerConfig) zen.HandlerFunc {
 		}
 
 		// Get status code color
-		statusColor := zen.ColorForStatus(c.Writer.Status())
-		methodColor := zen.GetMethodColor(c.Request.Method)
+		statusColor := ColorForStatus(c.Writer.Status())
+		methodColor := GetMethodColor(c.Request.Method)
 
 		consoleLog := fmt.Sprintf("%s %3d %s| %13v | %15s | %-7s %s %s\n",
-			statusColor, c.Writer.Status(), reset,
+			statusColor, c.Writer.Status(), Reset,
 			latency,
 			c.ClientIP(),
-			methodColor+c.Request.Method+reset,
-			gray, path,
+			methodColor+c.Request.Method+Reset,
+			Gray, path,
 		)
 
 		fileLog := fmt.Sprintf("%d | %13v | %15s | %-7s %s\n",
@@ -148,7 +144,6 @@ func initFileLogger(cfg LoggerConfig) error {
 		logFile = file
 		fileLogger = log.New(file, "", log.LstdFlags)
 		log.Printf("Initialized file logger at: %s", cfg.LogFilePath)
-
 		setupCleanup()
 	})
 
