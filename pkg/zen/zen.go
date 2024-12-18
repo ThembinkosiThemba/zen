@@ -2,7 +2,6 @@ package zen
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -12,10 +11,10 @@ import (
 // Engine is the framework instance
 type Engine struct {
 	*RouterGroup
-	router    *Router
-	groups    []*RouterGroup
-	addr      string
-	cus_contx Context
+	router *Router
+	groups []*RouterGroup
+	addr   string
+	ctx    Context
 }
 
 type Route struct {
@@ -38,6 +37,7 @@ func New() *Engine {
 func (e *Engine) Serve(addr string) error {
 	port, err := checkPort(addr)
 	if err != nil {
+		Errorf("port check failed: %v", err)
 		return fmt.Errorf("port check failed: %v", err)
 	}
 
@@ -50,11 +50,14 @@ func (e *Engine) Serve(addr string) error {
 	}
 
 	if newAddr != addr {
-		log.Printf("Port %s was in use. Using port %d instead", addr, port)
+		Infof("Port %s in in use. Using port %d instead", addr, port)
 	}
 
-	e.printRoutes()
-	fmt.Print(e.zenAsciiArt(newAddr))
+	if IsDevMode() {
+		e.printRoutes()
+		fmt.Print(e.zenAsciiArt(newAddr))
+	}
+
 	return http.ListenAndServe(newAddr, e)
 }
 
@@ -62,6 +65,7 @@ func (e *Engine) Serve(addr string) error {
 func (e *Engine) ServeTLS(addr, certFile, keyFile string) error {
 	port, err := checkPort(addr)
 	if err != nil {
+		Errorf("port check failed: %v", err)
 		return fmt.Errorf("port check failed: %v", err)
 	}
 
@@ -74,7 +78,7 @@ func (e *Engine) ServeTLS(addr, certFile, keyFile string) error {
 	}
 
 	if newAddr != addr {
-		log.Printf("Port %s was in use. Using port %d instead", addr, port)
+		Infof("Port %s in in use. Using port %d instead", addr, port)
 	}
 
 	e.printRoutes()
@@ -83,10 +87,10 @@ func (e *Engine) ServeTLS(addr, certFile, keyFile string) error {
 }
 
 // ServeWithTimeout starts the HTTP server with timeout settings
-// TODO: use custom logger
 func (e *Engine) ServeWithTimeout(addr string, timeout time.Duration) error {
 	port, err := checkPort(addr)
 	if err != nil {
+		Errorf("port check failed: %v", err)
 		return fmt.Errorf("port check failed: %v", err)
 	}
 
@@ -99,7 +103,7 @@ func (e *Engine) ServeWithTimeout(addr string, timeout time.Duration) error {
 	}
 
 	if newAddr != addr {
-		fmt.Printf("Port %s was in use. Using port %d instead.\n", addr, port)
+		Infof("Port %s in in use. Using port %d instead", addr, port)
 	}
 
 	srv := &http.Server{
@@ -121,7 +125,7 @@ func (engine *Engine) Shutdown(timeout time.Duration) error {
 		Handler: engine,
 	}
 
-	var ctx, cancel = engine.cus_contx.CustomContext()
+	var ctx, cancel = engine.ctx.DefaultContext()
 	defer cancel()
 
 	return server.Shutdown(ctx)

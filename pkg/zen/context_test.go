@@ -196,7 +196,7 @@ func TestContext_ClientIP(t *testing.T) {
 			}
 
 			c := NewContext(httptest.NewRecorder(), req)
-			if got := c.ClientIP(); got != tt.want {
+			if got := c.GetClientIP(); got != tt.want {
 				t.Errorf("ClientIP() = %v, want %v", got, tt.want)
 			}
 		})

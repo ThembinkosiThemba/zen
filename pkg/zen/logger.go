@@ -11,6 +11,141 @@ import (
 	"time"
 )
 
+type LogLevel int
+
+const (
+	DEBUG LogLevel = iota
+	INFO
+	SUCCESS
+	WARNING
+	ERROR
+	FATAL
+)
+
+type Log struct {
+	logger *log.Logger
+}
+
+var defaultLogger = &Log{
+	logger: log.New(os.Stdout, "", 0),
+}
+
+func NewLogger() *Log {
+	return &Log{
+		logger: log.New(os.Stdout, "", 0),
+	}
+}
+
+func (l *Log) log(level LogLevel, color, prefix string, v ...interface{}) {
+	if !IsDevMode() && level == DEBUG {
+		return
+	}
+
+	timestamp := time.Now().Format("2006/01/02 15:04:05")
+	message := fmt.Sprint(v...)
+
+	l.logger.Printf("%s%s [%s] %s%s",
+		color,
+		timestamp,
+		prefix,
+		message,
+		Reset,
+	)
+}
+
+func (l *Log) logf(level LogLevel, color, prefix string, format string, v ...interface{}) {
+	if !IsDevMode() && level == DEBUG {
+		return
+	}
+
+	timestamp := time.Now().Format("2006/01/02 15:04:05")
+	message := fmt.Sprintf(format, v...)
+
+	l.logger.Printf("%s%s [%s] %s%s",
+		color,
+		timestamp,
+		prefix,
+		message,
+		Reset,
+	)
+}
+
+// Debug logs message with gray color
+func (l *Log) Debug(v ...interface{}) {
+	l.log(DEBUG, Gray, "DEBUG", v...)
+}
+
+// Debugf logs formatted message with gray color
+func (l *Log) Debugf(format string, v ...interface{}) {
+	l.logf(DEBUG, Gray, "DEBUG", format, v...)
+}
+
+// Info logs message with blue color
+func (l *Log) Info(v ...interface{}) {
+	l.log(INFO, Blue, "INFO", v...)
+}
+
+// Infof logs formatted message with blue color
+func (l *Log) Infof(format string, v ...interface{}) {
+	l.logf(INFO, Blue, "INFO", format, v...)
+}
+
+// Success logs message with green color
+func (l *Log) Success(v ...interface{}) {
+	l.log(SUCCESS, Green, "SUCCESS", v...)
+}
+
+// Successf logs formatted message with green color
+func (l *Log) Successf(format string, v ...interface{}) {
+	l.logf(SUCCESS, Green, "SUCCESS", format, v...)
+}
+
+// Warn logs message with yellow color
+func (l *Log) Warn(v ...interface{}) {
+	l.log(WARNING, Yellow, "WARNING", v...)
+}
+
+// Warnf logs formatted message with yellow color
+func (l *Log) Warnf(format string, v ...interface{}) {
+	l.logf(WARNING, Yellow, "WARNING", format, v...)
+}
+
+// Error logs message with red color
+func (l *Log) Error(v ...interface{}) {
+	l.log(ERROR, Red, "ERROR", v...)
+}
+
+// Errorf logs formatted message with red color
+func (l *Log) Errorf(format string, v ...interface{}) {
+	l.logf(ERROR, Red, "ERROR", format, v...)
+}
+
+// Fatal logs message with purple color and exits
+func (l *Log) Fatal(v ...interface{}) {
+	l.log(FATAL, Purple, "FATAL", v...)
+	os.Exit(1)
+}
+
+// Fatalf logs formatted message with purple color and exits
+func (l *Log) Fatalf(format string, v ...interface{}) {
+	l.logf(FATAL, Purple, "FATAL", format, v...)
+	os.Exit(1)
+}
+
+// Package-level functions using default logger
+func Debug(v ...interface{})                   { defaultLogger.Debug(v...) }
+func Debugf(format string, v ...interface{})   { defaultLogger.Debugf(format, v...) }
+func Info(v ...interface{})                    { defaultLogger.Info(v...) }
+func Infof(format string, v ...interface{})    { defaultLogger.Infof(format, v...) }
+func Success(v ...interface{})                 { defaultLogger.Success(v...) }
+func Successf(format string, v ...interface{}) { defaultLogger.Successf(format, v...) }
+func Warn(v ...interface{})                    { defaultLogger.Warn(v...) }
+func Warnf(format string, v ...interface{})    { defaultLogger.Warnf(format, v...) }
+func Error(v ...interface{})                   { defaultLogger.Error(v...) }
+func Errorf(format string, v ...interface{})   { defaultLogger.Errorf(format, v...) }
+func Fatal(v ...interface{})                   { defaultLogger.Fatal(v...) }
+func Fatalf(format string, v ...interface{})   { defaultLogger.Fatalf(format, v...) }
+
 // logger configuration for the zen framework
 type LoggerConfig struct {
 	// skip logging for specific paths
@@ -68,10 +203,8 @@ func Logger(config ...LoggerConfig) HandlerFunc {
 			}
 		}
 
-		// Process request
 		c.Next()
 
-		// Stop timer
 		end := time.Now()
 		latency := end.Sub(start)
 
@@ -86,7 +219,7 @@ func Logger(config ...LoggerConfig) HandlerFunc {
 		consoleLog := fmt.Sprintf("%s %3d %s| %13v | %15s | %-7s %s %s\n",
 			statusColor, c.Writer.Status(), Reset,
 			latency,
-			c.ClientIP(),
+			c.GetClientIP(),
 			methodColor+c.Request.Method+Reset,
 			Gray, path,
 		)
@@ -94,7 +227,7 @@ func Logger(config ...LoggerConfig) HandlerFunc {
 		fileLog := fmt.Sprintf("%d | %13v | %15s | %-7s %s\n",
 			c.Writer.Status(),
 			latency,
-			c.ClientIP(),
+			c.GetClientIP(),
 			c.Request.Method,
 			path,
 		)
@@ -143,7 +276,7 @@ func initFileLogger(cfg LoggerConfig) error {
 
 		logFile = file
 		fileLogger = log.New(file, "", log.LstdFlags)
-		log.Printf("Initialized file logger at: %s", cfg.LogFilePath)
+		Infof("Initialized file logger at: %s", cfg.LogFilePath)
 		setupCleanup()
 	})
 

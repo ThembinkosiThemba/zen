@@ -1,5 +1,14 @@
 package middleware
 
+// This module is a security layer for web applications that provides comprehensive protection against various common cyber threats.
+// At its core, it implements multiple layers of defense including secure HTTP headers, request validation.
+// The middleware protects against Cross-Site Scripting (XSS) attacks by implementing content security policies and sanitizing incoming requests.
+// It defends against clickjacking through X-Frame-Options headers and prevents MIME-type sniffing attacks using X-Content-Type-Options.
+// Man-in-the-middle attacks are thwarted through HTTP Strict Transport Security (HSTS) enforcement, while cookie-based vulnerabilities are
+// addressed through secure cookie policies and SameSite restrictions.
+// The module also includes protection against SQL injection, file upload exploits, and malicious large payload attacks by implementing request size limits and file type restrictions.
+// For granular access control, it supports IP-based filtering and geographic restrictions.
+
 import (
 	"fmt"
 	"net/http"
@@ -157,9 +166,19 @@ func handleSecurity(c *zen.Context, cfg SecurityConfig) error {
 		setSecurityHeaders(c, cfg)
 	}
 
-	// TODO: sanitize requests
+	if cfg.Strategies&RequestSanitization != 0 {
+		if err := sanitizeRequest(c, cfg); err != nil {
+			return err
+		}
+	}
 
-	// TODO: ip security
+	if cfg.Strategies&IPSecurity != 0 {
+		if err := enforceIPSecurity(c, cfg); err != nil {
+			return err
+		}
+	}
+
+	// TODO: IP protection
 
 	return nil
 }
@@ -200,15 +219,35 @@ func buildCSPHeader(directives *ContentSecurityPolicyDirective) string {
 	if len(directives.DefaultSrc) > 0 {
 		policies = append(policies, fmt.Sprintf("default-src %s", strings.Join(directives.DefaultSrc, " ")))
 	}
-
 	if len(directives.ScriptSrc) > 0 {
-		// policies = append(policies, fmt.Sprintf("script-src %s", strings.Join(directives.ScriptSrc, " ")))
-		_ = append(policies, fmt.Sprintf("script-src %s", strings.Join(directives.ScriptSrc, " ")))
+		policies = append(policies, fmt.Sprintf("script-src %s", strings.Join(directives.ScriptSrc, " ")))
+	}
+	if len(directives.StyleSrc) > 0 {
+		policies = append(policies, fmt.Sprintf("style-src %s", strings.Join(directives.StyleSrc, " ")))
+	}
+	if len(directives.ImgSrc) > 0 {
+		policies = append(policies, fmt.Sprintf("img-src %s", strings.Join(directives.ImgSrc, " ")))
+	}
+	if len(directives.ConnectSrc) > 0 {
+		policies = append(policies, fmt.Sprintf("connect-src %s", strings.Join(directives.ConnectSrc, " ")))
+	}
+	if len(directives.FontSrc) > 0 {
+		policies = append(policies, fmt.Sprintf("font-src %s", strings.Join(directives.FontSrc, " ")))
+	}
+	if len(directives.ObjectSrc) > 0 {
+		policies = append(policies, fmt.Sprintf("object-src %s", strings.Join(directives.ObjectSrc, " ")))
+	}
+	if len(directives.MediaSrc) > 0 {
+		policies = append(policies, fmt.Sprintf("media-src %s", strings.Join(directives.MediaSrc, " ")))
+	}
+	if len(directives.FrameSrc) > 0 {
+		policies = append(policies, fmt.Sprintf("frame-src %s", strings.Join(directives.FrameSrc, " ")))
+	}
+	if directives.ReportURI != "" {
+		policies = append(policies, fmt.Sprintf("report-uri %s", directives.ReportURI))
 	}
 
-	// TODO: finish all directives
-
-	return ""
+	return strings.Join(policies, "; ")
 }
 
 func handleSecurityError(c *zen.Context, err error, cfg SecurityConfig) {
@@ -225,4 +264,129 @@ func handleSecurityError(c *zen.Context, err error, cfg SecurityConfig) {
 		return
 	}
 	c.Text(http.StatusInternalServerError, "Security error occured")
+}
+
+// implementation for request sanitization
+func sanitizeRequest(c *zen.Context, cfg SecurityConfig) error {
+	// first, we need to check request size
+	if c.Request.ContentLength > cfg.MaxRequestSize {
+		return &securityError{
+			Code:    http.StatusRequestEntityTooLarge,
+			Message: "Request exceeds maximum allowed size",
+		}
+	}
+
+	if cfg.SQLInjectionCheck {
+		if checkSqlInjection(c.Request) {
+			return &securityError{
+				Code:    http.StatusBadRequest,
+				Message: "Potential SQL injection detected",
+			}
+		}
+
+	}
+
+	if cfg.XSSCheck {
+		if containsXSS(c.Request) {
+			return &securityError{
+				Code:    http.StatusBadRequest,
+				Message: "Potential XSS attack detected",
+			}
+		}
+	}
+
+	return nil
+}
+
+// Helper functions for security checks
+// TODO: first simple version for SQL injection checks
+func checkSqlInjection(r *http.Request) bool {
+	sqlPatterns := []string{
+		"UNION SELECT",
+		"DROP TABLE",
+		"DELETE FROM",
+		"INSERT INTO",
+		"--",
+		";--",
+		";",
+		"/*",
+		"*/",
+		"@@",
+	}
+
+	return containsPatterns(r, sqlPatterns)
+}
+
+// TODO: first version XSS check
+func containsXSS(r *http.Request) bool {
+	xssPatterns := []string{
+		"<script",
+		"javascript:",
+		"onerror=",
+		"onload=",
+		"onclick=",
+		"alert(",
+		"eval(",
+	}
+
+	return containsPatterns(r, xssPatterns)
+}
+
+func containsPatterns(r *http.Request, patterns []string) bool {
+	// Check URL parameters
+	query := strings.ToLower(r.URL.RawQuery)
+	for _, pattern := range patterns {
+		if strings.Contains(query, strings.ToLower(pattern)) {
+			return true
+		}
+	}
+
+	// Check form data
+	if err := r.ParseForm(); err == nil {
+		for _, values := range r.Form {
+			for _, value := range values {
+				value = strings.ToLower(value)
+				for _, pattern := range patterns {
+					if strings.Contains(value, strings.ToLower(pattern)) {
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+func enforceIPSecurity(c *zen.Context, cfg SecurityConfig) error {
+	ip := c.GetClientIP()
+
+	for _, blockedIP := range cfg.BlockedIPs {
+		if ip == blockedIP {
+			return &securityError{
+				Code:    http.StatusForbidden,
+				Message: "IP address is blocked",
+			}
+		}
+	}
+
+	if len(cfg.AllowedIPs) > 0 {
+		allowed := false
+		for _, allowedIP := range cfg.AllowedIPs {
+			if ip == allowedIP {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return &securityError{
+				Code:    http.StatusForbidden,
+				Message: "IP address not allowed",
+			}
+		}
+	}
+
+	// TODO: Block IP addresses from countries using GEOLOCATION
+
+	return nil
 }

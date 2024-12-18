@@ -130,9 +130,9 @@ func (c *Context) WithValue(key, val interface{}) *Context {
 	return &newCtx
 }
 
-// WriteJson sends a JSON response to the client
+// JSON sends a JSON response to the client
 func (c *Context) JSON(code int, obj interface{}) {
-	c.Writer.Header().Set("Content-Type", "application/json")
+	c.SetContentType("application/json")
 	c.Writer.WriteHeader(code)
 	encoder := json.NewEncoder(c.Writer)
 	if err := encoder.Encode(obj); err != nil {
@@ -142,7 +142,7 @@ func (c *Context) JSON(code int, obj interface{}) {
 
 // Text sends a text response
 func (c *Context) Text(code int, format string, values ...interface{}) {
-	c.Writer.Header().Set("Content-Type", "text/plain")
+	c.SetContentType("text/plain")
 	c.Writer.WriteHeader(code)
 	if len(values) > 0 {
 		format = fmt.Sprintf(format, values...)
@@ -155,16 +155,16 @@ func (c *Context) Status(code int) {
 	c.Writer.WriteHeader(code)
 }
 
-// ClientIP returns the client IP address
-func (c *Context) ClientIP() string {
+// GetClientIP returns the client IP address
+func (c *Context) GetClientIP() string {
 	// First, we need to check X-Real-IP header
-	ip := c.Request.Header.Get("X-Real-IP")
+	ip := c.GetHeader("X-Real-IP")
 	if ip != "" {
 		return ip
 	}
 
 	// check X-Forwarded-For header
-	ip = c.Request.Header.Get("X-Forwarded-For")
+	ip = c.GetHeader("X-Forwarded-For")
 	if ip != "" {
 		return ip
 	}
@@ -282,7 +282,7 @@ func (c *Context) GetCookie(name string) (*http.Cookie, error) {
 	return c.Request.Cookie(name)
 }
 
-// CustomContext returns custom context with 10 seconds timeout
-func (c *Context) CustomContext() (context.Context, context.CancelFunc) {
+// DefaultContext returns custom context with 10 seconds timeout
+func (c *Context) DefaultContext() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), 10*time.Second)
 }

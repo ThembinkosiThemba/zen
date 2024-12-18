@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -58,7 +57,7 @@ const (
 
 // DefaultCORSConfig returns the default CORS configuration
 func DefaultCORSConfig() CORSConfig {
-	return CORSConfig{
+	config := CORSConfig{
 		AllowOrigins: []string{"*"},
 		AllowMethods: []string{
 			http.MethodGet,
@@ -74,11 +73,17 @@ func DefaultCORSConfig() CORSConfig {
 		ExposeHeaders:    []string{},
 		MaxAge:           int(12 * time.Hour.Seconds()), // 12 hours
 	}
+
+	if contains(config.AllowOrigins, "*") {
+		zen.Warn("Using default cors configuration with wildcard origin (*). \nThis may not be secure.")
+	}
+
+	return config
 }
 
 // DefaultCors returns the CORS middleware with default configs
 func DefaultCors() zen.HandlerFunc {
-	log.Printf("Using default cors configuration with wildcard on origin (*)")
+	// log.Printf("Using default cors configuration with wildcard on origin (*)")
 	return CORSWithConfig(DefaultCORSConfig())
 }
 
