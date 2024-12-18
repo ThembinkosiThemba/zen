@@ -11,6 +11,7 @@ import (
 func main() {
 	// create new zen instancee
 	app := zen.New()
+	zen.SetCurrentMode(zen.DevMode)
 
 	app.Use(
 		middleware.DefaultCors(),

@@ -50,6 +50,9 @@ func main() {
     // Create new Zen app
     app := zen.New()
 
+    // Setting the Zen mode to either DevMode / Production
+    zen.SetCurrentMode(zen.DevMode)
+
     // Global middleware
     app.Use(
         zen.Logger(),                    // Request logging

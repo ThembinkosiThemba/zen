@@ -35,7 +35,7 @@ func DefaultRateLimiterConfig() RateLimitConfig {
 		Window:     time.Minute,
 		BurstLimit: 20,
 		CustomKeyFunc: func(c *zen.Context) string {
-			return c.ClientIP()
+			return c.GetClientIP()
 		},
 		StatusCode: http.StatusTooManyRequests,
 		Strategy:   IPBased,
