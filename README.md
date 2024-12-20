@@ -14,19 +14,51 @@ Zen is a lightweight and fast HTTP framework for Go, focusing on simplicity and 
     <img src="./docs/assets/zen.png" alt="zen" />
 </p>
 
+## Table of Contents
+
+- [Installation](#installation)
+- [Basic Example](#basic-example)
+- [Middleware Documentation](#middleware-documentation)
+  - [Authentication Middleware](#authentication-middleware)
+  - [CORS Middleware](#cors-middleware)
+  - [Rate Limiter Middleware](#rate-limiter-middleware)
+  - [Security Middleware](#security-middleware)
+- [Context Functions](#context-functions)
+  - [Request Handling](#request-handling)
+    - [Getting IP Address](#getting-ip-address)
+    - [Parsing JSON Bodies](#parsing-json-bodies)
+    - [Getting Request Headers](#getting-request-headers)
+    - [URL Parameters](#url-parameters)
+    - [Query Parameters](#query-parameters)
+  - [Response Functions](#response-functions)
+    - [JSON Responses](#json-responses)
+    - [Text Responses](#text-responses)
+    - [Setting Headers](#setting-headers)
+    - [Status Codes](#status-codes)
+  - [Cookie Management](#cookie-management)
+    - [Setting Cookies](#setting-cookies)
+    - [Getting Cookies](#getting-cookies)
+  - [Content Type Management](#content-type-management)
+  - [Context Management](#context-management)
+    - [Timeout and Cancellation](#timeout-and-cancellation)
+    - [Context Values](#context-values)
+- [Complete Example with All Features](#complete-example-with-all-features)
+- [Best Practices](#best-practices)
+- [Contributing](#contributing)
+- [Documentation](#documentation)
+- [License](#license)
+
 ## Features
 
 - 🚀 Lightweight and Fast
-- 🛡️ Comprehensive Middleware Support
+- 🛡️ Comprehensive Middleware Support and Security
   - Authentication (JWT-based)
   - CORS Management
   - Rate Limiting (beta)
   - Security Headers & Protections (beta)
   - API gateway (beta)
-- 🎯 Simple & Intuitive Routing
 - 📝 Request Logging
 - ⚡ Hot Reloading for Development
-- 🔒 Enterprise-Grade Security
 
 ## Quick Start
 
@@ -160,6 +192,230 @@ Features:
 - Request Sanitization
 - IP Security
 - Session Security
+
+## Context Functions
+
+Zen provides a powerful context object that encapsulates the request and response. Here are the comprehensive functions available:
+
+### Request Handling
+
+#### Getting IP Address
+
+Retrieve the client's IP address with fallback options:
+
+```go
+app.GET("/ip", func(c *zen.Context) {
+    clientIP := c.GetClientIP() // Checks X-Real-IP, X-Forwarded-For, and RemoteAddr
+    c.JSON(http.StatusOK, clientIP)
+})
+```
+
+#### Parsing JSON Bodies
+
+Multiple options for handling JSON request bodies:
+
+```go
+type UserRequest struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+app.POST("/user", func(c *zen.Context) {
+    var user UserRequest
+
+    // Option 1: Basic parsing
+    if err := c.ParseJSON(&user); err != nil {
+        c.JSON(http.StatusBadRequest,err.Error())
+        return
+    }
+
+    // Option 2: Try parsing with boolean response
+    if !c.TryParseJSON(&user) {
+        c.JSON(http.StatusBadRequest, "Invalid JSON")
+        return
+    }
+
+    // Option 3: Parse with automatic error response
+    if !c.ParseJSONWithError(&user) {
+        return // Error response is automatically sent
+    }
+
+    c.JSON(http.StatusOK, user)
+})
+```
+
+#### Getting Request Headers
+
+```go
+app.GET("/headers", func(c *zen.Context) {
+    userAgent := c.GetHeader("User-Agent")
+    c.JSON(http.StatusOK, userAgent)
+})
+```
+
+#### URL Parameters
+
+Access URL path parameters:
+
+```go
+app.GET("/users/:id", func(c *zen.Context) {
+    userID := c.GetParam("id")
+    c.JSON(http.StatusOK, userID)
+})
+```
+
+#### Query Parameters
+
+Handle query parameters with multiple methods:
+
+```go
+app.GET("/search", func(c *zen.Context) {
+    // Single parameter
+    query := c.GetQueryParam("q")
+
+    // All query parameters
+    allParams := c.GetQueryParams()
+
+    // Setting query parameters
+    c.SetQueryParam("page", "2")
+
+    c.JSON(http.StatusOK, map[string]interface{}{
+        "query": query,
+        "allParams": allParams,
+    })
+})
+```
+
+### Response Functions
+
+#### JSON Responses
+
+Send JSON responses with proper content type:
+
+```go
+app.GET("/data", func(c *zen.Context) {
+    c.JSON(http.StatusOK, "some data value")
+})
+```
+
+#### Text Responses
+
+Send plain text responses:
+
+```go
+app.GET("/text", func(c *zen.Context) {
+    c.Text(http.StatusOK, "Hello %s", "World")
+})
+```
+
+#### Setting Headers
+
+Manage response headers:
+
+```go
+app.GET("/custom-headers", func(c *zen.Context) {
+    c.SetHeader("X-Custom-Header", "value")
+    c.JSON(http.StatusOK, "OK")
+})
+```
+
+#### Status Codes
+
+Set HTTP status codes:
+
+```go
+app.GET("/status", func(c *zen.Context) {
+    c.Status(http.StatusAccepted)
+})
+```
+
+### Cookie Management
+
+#### Setting Cookies
+
+```go
+app.GET("/set-cookie", func(c *zen.Context) {
+    cookie := &http.Cookie{
+        Name:     "session",
+        Value:    "123",
+        Path:     "/",
+        MaxAge:   3600,
+        HttpOnly: true,
+        Secure:   true,
+    }
+    c.SetCookie(cookie)
+    c.JSON(http.StatusOK, "cookie set")
+})
+```
+
+#### Getting Cookies
+
+```go
+app.GET("/get-cookie", func(c *zen.Context) {
+    cookie, err := c.GetCookie("session")
+    if err != nil {
+        c.JSON(http.StatusBadRequest, map[string]string{
+            "error": "Cookie not found",
+        })
+        return
+    }
+    c.JSON(http.StatusOK, map[string]string{
+        "cookieValue": cookie.Value,
+    })
+})
+```
+
+### Content Type Management
+
+```go
+app.GET("/content-type", func(c *zen.Context) {
+    c.SetContentType("application/json")
+    contentType := c.GetContentType()
+    c.JSON(http.StatusOK, map[string]string{
+        "contentType": contentType,
+    })
+})
+```
+
+### Context Management
+
+#### Timeout and Cancellation
+
+```go
+app.GET("/timeout", func(c *zen.Context) {
+    ctx, cancel := c.DefaultContext() // 10 second timeout
+    defer cancel()
+
+    select {
+    case <-ctx.Done():
+        c.JSON(http.StatusGatewayTimeout, map[string]string{
+            "error": "Request timeout",
+        })
+    case <-time.After(5 * time.Second):
+        c.JSON(http.StatusOK, map[string]string{
+            "message": "Operation completed",
+        })
+    }
+})
+```
+
+#### Context Values
+
+```go
+app.GET("/context-values", func(c *zen.Context) {
+    // Set context value
+    type key string
+    userKey := key("user")
+    newCtx := c.WithValue(userKey, "john")
+
+    // Get context value
+    if user, ok := newCtx.Value(userKey).(string); ok {
+        c.JSON(http.StatusOK, map[string]string{
+            "user": user,
+        })
+    }
+})
+```
 
 ## Complete Example with All Features
 

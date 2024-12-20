@@ -43,20 +43,29 @@ func (group *RouterGroup) Use(middleware ...HandlerFunc) {
 	// group.engine.router.Use(middleware...)
 }
 
-func (r *Router) handleOptions(z *Context) {
-
-	handlers := make([]HandlerFunc, len(r.globalMiddleware))
-	copy(handlers, r.globalMiddleware)
-
-	z.Handlers = handlers
-	z.Index = -1
-
-	z.Next()
-
-	// Only set 404 if no response was written by middleware
-	if z.Writer.Status() == 0 {
-		z.Text(http.StatusNoContent, "")
+func (r *Router) handleOptions(c *Context) {
+	methodHandlers := r.handlers[http.MethodOptions]
+	for pattern, handlers := range methodHandlers {
+		if params, ok := matchPath(pattern, c.Request.URL.Path); ok {
+			c.Params = params
+			c.Handlers = append(r.globalMiddleware, handlers...)
+			c.Next()
+			return
+		}
 	}
+
+	// If no specific handler is found, execute global middleware
+	if len(r.globalMiddleware) > 0 {
+		c.Handlers = r.globalMiddleware
+		c.Next()
+		// Only set 204 if no response was written by middleware
+		if c.Writer.Status() == 0 {
+			c.Text(http.StatusNoContent, "")
+		}
+		return
+	}
+
+	c.Text(http.StatusNoContent, "")
 }
 
 // Use adds middleware functions to the global middleware stack.
@@ -180,12 +189,14 @@ func (r *Router) handle(c *Context) {
 		c.Next()
 		// Only set 404 if no response was written by middleware
 		if c.Writer.Status() == 0 {
-			c.JSON(http.StatusNotFound, "404 NOT FOUND")
+			c.Writer.WriteHeader(http.StatusNotFound)
+			c.Writer.Write([]byte("404 NOT FOUND"))
 		}
 		return
 	}
 
-	c.JSON(http.StatusNotFound, "404 NOT FOUND")
+	c.Writer.WriteHeader(http.StatusNotFound)
+	c.Writer.Write([]byte("404 NOT FOUND"))
 }
 
 // matchPath determines if a request path matches a route pattern and extracts

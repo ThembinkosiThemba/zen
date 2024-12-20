@@ -52,7 +52,7 @@ func (c *Context) Quit() {
 
 // QuitWithStatus stops the middleware chain execution and writes the status code
 func (c *Context) QuitWithStatus(code int) {
-	c.Status(code)
+	c.Writer.WriteHeader(code)
 	c.SetHeader("X-Content-Type-Options", "nosniff")
 	c.Quit()
 }

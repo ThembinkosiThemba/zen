@@ -236,3 +236,137 @@ func TestContext_Context(t *testing.T) {
 		t.Error("WithValue not working as expected")
 	}
 }
+func TestContext_Quit(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/test", nil)
+	c := NewContext(w, req)
+
+	handler1 := func(c *Context) {
+		c.Quit()
+	}
+	handler2 := func(c *Context) {
+		t.Error("This handler should not be executed")
+	}
+
+	c.Handlers = []HandlerFunc{handler1, handler2}
+	c.Next()
+
+	if c.Index != len(c.Handlers) {
+		t.Error("Index should be set to the length of handlers")
+	}
+}
+
+func TestContext_QuitWithStatus(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/test", nil)
+	c := NewContext(w, req)
+
+	handler1 := func(c *Context) {
+		c.QuitWithStatus(http.StatusForbidden)
+	}
+	handler2 := func(c *Context) {
+		t.Error("This handler should not be executed")
+	}
+
+	c.Handlers = []HandlerFunc{handler1, handler2}
+	c.Next()
+
+	if c.Index != len(c.Handlers) {
+		t.Error("Index should be set to the length of handlers")
+	}
+	if w.Code != http.StatusForbidden {
+		t.Errorf("Expected status code %d, got %d", http.StatusForbidden, w.Code)
+	}
+	if w.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Error("Expected X-Content-Type-Options header to be set to nosniff")
+	}
+}
+
+func TestContext_SetQueryParam(t *testing.T) {
+	req := httptest.NewRequest("GET", "/test", nil)
+	c := NewContext(httptest.NewRecorder(), req)
+
+	c.SetQueryParam("key", "value")
+
+	if got := c.GetQueryParam("key"); got != "value" {
+		t.Errorf("Expected query param 'key' to be 'value', got %q", got)
+	}
+}
+
+func TestContext_GetQueryParams(t *testing.T) {
+	req := httptest.NewRequest("GET", "/test?key1=value1&key2=value2", nil)
+	c := NewContext(httptest.NewRecorder(), req)
+
+	params := c.GetQueryParams()
+
+	if len(params) != 2 {
+		t.Errorf("Expected 2 query params, got %d", len(params))
+	}
+	if params["key1"][0] != "value1" {
+		t.Errorf("Expected query param 'key1' to be 'value1', got %q", params["key1"][0])
+	}
+	if params["key2"][0] != "value2" {
+		t.Errorf("Expected query param 'key2' to be 'value2', got %q", params["key2"][0])
+	}
+}
+
+func TestContext_SetCookie(t *testing.T) {
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/test", nil)
+	c := NewContext(w, req)
+
+	cookie := &http.Cookie{Name: "test", Value: "value"}
+	c.SetCookie(cookie)
+
+	resp := w.Result()
+	cookies := resp.Cookies()
+	var got *http.Cookie
+	for _, cookie := range cookies {
+		if cookie.Name == "test" {
+			got = cookie
+			break
+		}
+	}
+	if got == nil || got.Value != "value" {
+		t.Errorf("Expected cookie 'test' to have value 'value', got %q", got.Value)
+	}
+}
+
+func TestContext_GetCookie(t *testing.T) {
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.AddCookie(&http.Cookie{Name: "test", Value: "value"})
+	c := NewContext(httptest.NewRecorder(), req)
+
+	cookie, err := c.GetCookie("test")
+	if err != nil {
+		t.Errorf("Expected to get cookie 'test', got error %v", err)
+	}
+	if cookie.Value != "value" {
+		t.Errorf("Expected cookie 'test' to have value 'value', got %q", cookie.Value)
+	}
+}
+
+func TestContext_DefaultContext(t *testing.T) {
+	req := httptest.NewRequest("GET", "/test", nil)
+	c := NewContext(httptest.NewRecorder(), req)
+
+	ctx, cancel := c.DefaultContext()
+	defer cancel()
+
+	select {
+	case <-ctx.Done():
+		t.Error("Context should not be done yet")
+	default:
+	}
+
+	time.Sleep(11 * time.Second)
+
+	select {
+	case <-ctx.Done():
+		if ctx.Err() != context.DeadlineExceeded {
+			t.Errorf("Expected context error to be DeadlineExceeded, got %v", ctx.Err())
+		}
+	default:
+		t.Error("Context should be done")
+	}
+}

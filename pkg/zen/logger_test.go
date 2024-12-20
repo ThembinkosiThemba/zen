@@ -2,10 +2,12 @@ package zen
 
 import (
 	"bytes"
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -128,7 +130,7 @@ func TestLoggerCleanup(t *testing.T) {
 
 	// Verify file exists
 	_, err := os.Stat(logPath)
- 	require.NoError(t, err, "Log file should exist")
+	require.NoError(t, err, "Log file should exist")
 
 	// Test cleanup
 	err = Close()
@@ -165,22 +167,25 @@ func TestLoggerSignalHandling(t *testing.T) {
 	_, err := os.Stat(logPath)
 	require.NoError(t, err, "Log file should exist")
 
-	// Simulate SIGTERM
-	p, err := os.FindProcess(os.Getpid())
-	require.NoError(t, err)
+	// Create a channel to receive the signal
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGTERM)
 
-	// Send signal in goroutine to avoid blocking
+	// Simulate SIGTERM
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		p.Signal(syscall.SIGTERM)
+		syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
 	}()
 
-	// Wait briefly to allow signal handling
-	time.Sleep(200 * time.Millisecond)
-
-	// Cleanup
-	err = Close()
-	require.NoError(t, err)
+	// Wait for the signal
+	select {
+	case <-sigChan:
+		// Cleanup
+		err = Close()
+		require.NoError(t, err)
+	case <-time.After(1 * time.Second):
+		t.Fatal("Timeout waiting for SIGTERM")
+	}
 }
 
 func TestLoggerWithCustomIP(t *testing.T) {
@@ -243,9 +248,126 @@ func TestLoggerWithSkipPaths(t *testing.T) {
 		})
 	}
 }
+func TestLogLevels(t *testing.T) {
+	var buf bytes.Buffer
+	logger := &Log{logger: log.New(&buf, "", 0)}
+
+	tests := []struct {
+		level   LogLevel
+		method  func(...interface{})
+		message string
+		color   string
+		prefix  string
+	}{
+		{DEBUG, logger.Debug, "debug message", Gray, "DEBUG"},
+		{INFO, logger.Info, "info message", Blue, "INFO"},
+		{SUCCESS, logger.Success, "success message", Green, "SUCCESS"},
+		{WARNING, logger.Warn, "warn message", Yellow, "WARNING"},
+		{ERROR, logger.Error, "error message", Red, "ERROR"},
+		{FATAL, logger.Fatal, "fatal message", Purple, "FATAL"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.prefix, func(t *testing.T) {
+			buf.Reset()
+			tt.method(tt.message)
+			logOutput := buf.String()
+			assert.Contains(t, logOutput, tt.color)
+			assert.Contains(t, logOutput, tt.prefix)
+			assert.Contains(t, logOutput, tt.message)
+		})
+	}
+}
+
+func TestLogfLevels(t *testing.T) {
+	var buf bytes.Buffer
+	logger := &Log{logger: log.New(&buf, "", 0)}
+
+	tests := []struct {
+		level  LogLevel
+		method func(string, ...interface{})
+		format string
+		args   []interface{}
+		color  string
+		prefix string
+	}{
+		{DEBUG, logger.Debugf, "debug %s", []interface{}{"message"}, Gray, "DEBUG"},
+		{INFO, logger.Infof, "info %s", []interface{}{"message"}, Blue, "INFO"},
+		{SUCCESS, logger.Successf, "success %s", []interface{}{"message"}, Green, "SUCCESS"},
+		{WARNING, logger.Warnf, "warn %s", []interface{}{"message"}, Yellow, "WARNING"},
+		{ERROR, logger.Errorf, "error %s", []interface{}{"message"}, Red, "ERROR"},
+		{FATAL, logger.Fatalf, "fatal %s", []interface{}{"message"}, Purple, "FATAL"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.prefix, func(t *testing.T) {
+			buf.Reset()
+			tt.method(tt.format, tt.args...)
+			logOutput := buf.String()
+			assert.Contains(t, logOutput, tt.color)
+			assert.Contains(t, logOutput, tt.prefix)
+			assert.Contains(t, logOutput, fmt.Sprintf(tt.format, tt.args...))
+		})
+	}
+}
 
 func TestDefaultLoggerConfig(t *testing.T) {
 	config := DefaultLoggerConfig()
 	assert.False(t, config.LogToFile)
 	assert.Equal(t, "logs/zen.log", config.LogFilePath)
+}
+
+func TestInitFileLogger(t *testing.T) {
+	testDir := t.TempDir()
+	logPath := filepath.Join(testDir, "test.log")
+
+	config := LoggerConfig{
+		LogToFile:   true,
+		LogFilePath: logPath,
+	}
+
+	err := initFileLogger(config)
+	require.NoError(t, err)
+
+	// Verify file exists
+	_, err = os.Stat(logPath)
+	require.NoError(t, err, "Log file should exist")
+
+	// Cleanup
+	err = Close()
+	require.NoError(t, err, "Cleanup should succeed")
+}
+
+func TestLoggerMiddleware(t *testing.T) {
+	testDir := t.TempDir()
+	logPath := filepath.Join(testDir, "middleware.log")
+
+	config := LoggerConfig{
+		LogToFile:   true,
+		LogFilePath: logPath,
+	}
+
+	handler := Logger(config)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/test", nil)
+	c := NewContext(w, r)
+	handler(c)
+
+	// Wait for file operations
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify file exists
+	_, err := os.Stat(logPath)
+	require.NoError(t, err, "Log file should exist")
+
+	// Verify log content
+	content, err := os.ReadFile(logPath)
+	require.NoError(t, err)
+	logContent := string(content)
+	assert.Contains(t, logContent, "/test")
+
+	// Cleanup
+	err = Close()
+	require.NoError(t, err, "Cleanup should succeed")
 }
