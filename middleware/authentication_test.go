@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ThembinkosiThemba/zen/pkg/zen"
+	"github.com/ThembinkosiThemba/zen"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 )

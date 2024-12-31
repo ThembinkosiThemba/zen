@@ -28,16 +28,16 @@ Here's a minimal example to get started with the auth middleware:
 package main
 
 import (
-    "github.com/ThembinkosiThemba/zen/pkg/zen"
+    "github.com/ThembinkosiThemba/zen"
     "github.com/ThembinkosiThemba/zen/pkg/middleware"
 )
 
 func main() {
     r := zen.New()
-    
+
     // Add auth middleware with a secret key
-    r.Use(middleware.Auth("your-secret-key"))
-    
+    r.Apply(middleware.Auth("your-secret-key"))
+
     r.GET("/protected", func(c *zen.Context) {
         // Get the default claims
         claims, ok := middleware.GetClaims[*middleware.BaseClaims](c)
@@ -45,13 +45,13 @@ func main() {
             c.Status(http.StatusUnauthorized)
             return
         }
-        
+
         c.JSON(200, map[string]string{
             "user_id": claims.UserID,
             "role":    claims.Role,
         })
     })
-    
+
     r.Serve(":8080")
 }
 ```
@@ -74,7 +74,7 @@ config := middleware.AuthConfig{
     },
 }
 
-r.Use(middleware.AuthWithConfig(config))
+r.Apply(middleware.AuthWithConfig(config))
 ```
 
 ## Token Sources
@@ -82,6 +82,7 @@ r.Use(middleware.AuthWithConfig(config))
 The middleware supports multiple token sources:
 
 ### 1. Header (default)
+
 ```go
 // Config for Authorization header
 config := middleware.AuthConfig{
@@ -94,6 +95,7 @@ config := middleware.AuthConfig{
 ```
 
 ### 2. Query Parameter
+
 ```go
 // Config for query parameter
 config := middleware.AuthConfig{
@@ -105,6 +107,7 @@ config := middleware.AuthConfig{
 ```
 
 ### 3. Cookie
+
 ```go
 // Config for cookie
 config := middleware.AuthConfig{
@@ -150,7 +153,7 @@ func generateCustomToken(userID, role, name, email, dept string) (string, error)
             IssuedAt:  jwt.NewNumericDate(time.Now()),
         },
     }
-    
+
     return middleware.GenerateToken(claims, "your-secret-key")
 }
 
@@ -161,7 +164,7 @@ r.GET("/profile", func(c *zen.Context) {
         c.Status(http.StatusUnauthorized)
         return
     }
-    
+
     c.JSON(200, map[string]interface{}{
         "user_id": claims.UserID,
         "name":    claims.Name,
@@ -222,7 +225,7 @@ config := middleware.AuthConfig{
 package main
 
 import (
-    "github.com/ThembinkosiThemba/zen/pkg/zen"
+    "github.com/ThembinkosiThemba/zen"
     "github.com/ThembinkosiThemba/zen/pkg/middleware"
     "net/http"
     "time"
@@ -230,16 +233,16 @@ import (
 
 func main() {
     r := zen.New()
-    
+
     // Configure auth middleware
     authConfig := middleware.AuthConfig{
         SecretKey: "your-secret-key",
         SkipPaths: []string{"/login"},
     }
-    
+
     // Add middleware
-    r.Use(middleware.AuthWithConfig(authConfig))
-    
+    r.Apply(middleware.AuthWithConfig(authConfig))
+
     // Login endpoint (skipped from auth)
     r.POST("/login", func(c *zen.Context) {
         // Simple login logic (replace with your own)
@@ -247,31 +250,31 @@ func main() {
             Username string `json:"username"`
             Password string `json:"password"`
         }
-        
+
         if err := c.BindJSON(&login); err != nil {
             c.Status(http.StatusBadRequest)
             return
         }
-        
+
         // Create claims
         claims := middleware.NewBaseClaims(
             login.Username,
             "user",
             24*time.Hour,
         )
-        
+
         // Generate token
         token, err := middleware.GenerateToken(claims, "your-secret-key")
         if err != nil {
             c.Status(http.StatusInternalServerError)
             return
         }
-        
+
         c.JSON(200, map[string]string{
             "token": token,
         })
     })
-    
+
     // Protected endpoint
     r.GET("/protected", func(c *zen.Context) {
         claims, ok := middleware.GetClaims[*middleware.BaseClaims](c)
@@ -279,14 +282,14 @@ func main() {
             c.Status(http.StatusUnauthorized)
             return
         }
-        
+
         c.JSON(200, map[string]interface{}{
             "message": "Welcome to protected resource",
             "user_id": claims.UserID,
             "role":    claims.Role,
         })
     })
-    
+
     r.Serve(":8080")
 }
 ```
@@ -297,7 +300,7 @@ func main() {
 package main
 
 import (
-    "github.com/ThembinkosiThemba/zen/pkg/zen"
+    "github.com/ThembinkosiThemba/zen"
     "github.com/ThembinkosiThemba/zen/pkg/middleware"
     "github.com/golang-jwt/jwt/v5"
     "net/http"
@@ -322,14 +325,14 @@ func RequireRole(roles ...string) zen.HandlerFunc {
             c.Status(http.StatusUnauthorized)
             return
         }
-        
+
         for _, role := range roles {
             if claims.Role == role {
                 c.Next()
                 return
             }
         }
-        
+
         c.JSON(http.StatusForbidden, map[string]string{
             "error": "Insufficient permissions",
         })
@@ -338,7 +341,7 @@ func RequireRole(roles ...string) zen.HandlerFunc {
 
 func main() {
     r := zen.New()
-    
+
     // Configure auth with custom claims
     config := middleware.AuthConfig{
         SecretKey: "your-secret-key",
@@ -347,9 +350,9 @@ func main() {
             return &UserClaims{}
         },
     }
-    
-    r.Use(middleware.AuthWithConfig(config))
-    
+
+    r.Apply(middleware.AuthWithConfig(config))
+
     // Admin-only endpoint
     r.GET("/admin", RequireRole("admin"), func(c *zen.Context) {
         claims, _ := middleware.GetClaims[*UserClaims](c)
@@ -359,7 +362,7 @@ func main() {
             "email":   claims.Email,
         })
     })
-    
+
     // User or admin endpoint
     r.GET("/dashboard", RequireRole("user", "admin"), func(c *zen.Context) {
         claims, _ := middleware.GetClaims[*UserClaims](c)
@@ -368,7 +371,7 @@ func main() {
             "user":    claims.Name,
         })
     })
-    
+
     r.Serve(":8080")
 }
 ```

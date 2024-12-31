@@ -1,11 +1,10 @@
 package main
 
 import (
-	"log"
 	"net/http"
 
-	"github.com/ThembinkosiThemba/zen/pkg/zen"
-	"github.com/ThembinkosiThemba/zen/pkg/zen/middleware"
+	"github.com/ThembinkosiThemba/zen"
+	"github.com/ThembinkosiThemba/zen/middleware"
 )
 
 func main() {
@@ -13,13 +12,13 @@ func main() {
 	app := zen.New()
 	zen.SetCurrentMode(zen.DevMode)
 
-	app.Use(
+	app.Apply(
 		middleware.DefaultCors(),
 		middleware.Recovery(),
 	)
 
 	// Enable logging to file with default path (logs/zen.log)
-	app.Use(zen.Logger(zen.LoggerConfig{
+	app.Apply(zen.Logger(zen.LoggerConfig{
 		LogToFile:   true,
 		LogFilePath: "logs/zen.log",
 	}))
@@ -30,12 +29,11 @@ func main() {
 	})
 
 	app.POST("/users", func(c *zen.Context) {
-		c.JSON(http.StatusCreated, map[string]interface{}{
-			"message": "User created successfully",
-		})
+		user := zen.M{"name": "Thembinkosi", "surname": "Mkhonta"}
+		c.Success(http.StatusOK, user, "User retrieved successfully")
 	})
 
 	if err := app.Serve(":8080"); err != nil {
-		log.Fatal(err)
+		zen.Fatal(err)
 	}
 }

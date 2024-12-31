@@ -1,3 +1,5 @@
+// The CORS (Cross-Origin Resource Sharing) middleware for Zen framework provides a
+// flexible way to handle cross-origin requests with customizable configurations.
 package middleware
 
 import (
@@ -6,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ThembinkosiThemba/zen/pkg/zen"
+	"github.com/ThembinkosiThemba/zen"
 )
 
 // CORSConfig defines the config for CORS middleware

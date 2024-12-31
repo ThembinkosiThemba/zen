@@ -85,11 +85,11 @@ func TestEngine_Use(t *testing.T) {
 	engine := New()
 	middlewareOrder := []string{}
 
-	engine.Use(func(c *Context) {
+	engine.Apply(func(c *Context) {
 		middlewareOrder = append(middlewareOrder, "global1")
 		c.Next()
 	})
-	engine.Use(func(c *Context) {
+	engine.Apply(func(c *Context) {
 		middlewareOrder = append(middlewareOrder, "global2")
 		c.Next()
 	})

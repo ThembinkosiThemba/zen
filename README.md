@@ -1,11 +1,12 @@
 # Zen
 
 > ⚠️ **Development Mode**: This project is currently in active development. Features and usage guides may change.
+> Be sure to check the CHANGELOG for usage updates, patches and version changes.
 
-Zen is a lightweight and fast HTTP framework for Go, focusing on simplicity and performance while providing enterprise-grade features for modern web applications. Zen has a security-first focus providing a range of middleware such as authentication, ratelimiting and api gateways.
+Zen is a lightweight and fast HTTP framework for Go, focusing on simplicity and performance while providing enterprise-grade features for modern web applications. Zen has a security-first focus providing a range of middleware such as authentication, ratelimiting, api gateway functionaly and CORS support.
 
 ![go version](https://img.shields.io/badge/go-%3E%3D1.18-blue)
-![version](https://img.shields.io/badge/version-v0.1.7-blue)
+![version](https://img.shields.io/badge/version-v0.1.8-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 > All important tools in one project, which makes it ideal.
@@ -19,18 +20,27 @@ Zen is a lightweight and fast HTTP framework for Go, focusing on simplicity and 
 - [Installation](#installation)
 - [Basic Example](#basic-example)
 - [Middleware Documentation](#middleware-documentation)
-  - [Authentication Middleware](#authentication-middleware)
   - [CORS Middleware](#cors-middleware)
-  - [Rate Limiter Middleware](#rate-limiter-middleware)
+  - [Authentication](#authentication-middleware)
+  - [Rate Limiter](#rate-limiter-middleware)
   - [Security Middleware](#security-middleware)
+  - [Logger](#logger)
 - [Context Functions](#context-functions)
+
   - [Request Handling](#request-handling)
+
     - [Getting IP Address](#getting-ip-address)
     - [Parsing JSON Bodies](#parsing-json-bodies)
     - [Getting Request Headers](#getting-request-headers)
     - [URL Parameters](#url-parameters)
     - [Query Parameters](#query-parameters)
+    - [Host Address](#getting-host-address)
+    - [Request Method](#getting-request-method)
+    - [URL Path](#getting-url-path)
+
   - [Response Functions](#response-functions)
+    - [Success Response](#success-responses)
+    - [Error Response](#error-responses)
     - [JSON Responses](#json-responses)
     - [Text Responses](#text-responses)
     - [Setting Headers](#setting-headers)
@@ -42,30 +52,17 @@ Zen is a lightweight and fast HTTP framework for Go, focusing on simplicity and 
   - [Context Management](#context-management)
     - [Timeout and Cancellation](#timeout-and-cancellation)
     - [Context Values](#context-values)
+
 - [Complete Example with All Features](#complete-example-with-all-features)
 - [Best Practices](#best-practices)
 - [Contributing](#contributing)
 - [Documentation](#documentation)
 - [License](#license)
 
-## Features
-
-- 🚀 Lightweight and Fast
-- 🛡️ Comprehensive Middleware Support and Security
-  - Authentication (JWT-based)
-  - CORS Management
-  - Rate Limiting (beta)
-  - Security Headers & Protections (beta)
-  - API gateway (beta)
-- 📝 Request Logging
-- ⚡ Hot Reloading for Development
-
-## Quick Start
-
 ### Installation
 
 ```bash
-go get github.com/ThembinkosiThemba/zen@v0.1.7
+go get github.com/ThembinkosiThemba/zen@v0.1.8
 ```
 
 ### Basic Example
@@ -74,30 +71,28 @@ go get github.com/ThembinkosiThemba/zen@v0.1.7
 package main
 
 import (
-    "github.com/ThembinkosiThemba/zen/pkg/zen"
+    "github.com/ThembinkosiThemba/zen"
     "github.com/ThembinkosiThemba/zen/pkg/middleware"
 )
 
 func main() {
-    // Create new Zen app
+    // Create new Zen app instance
     app := zen.New()
 
     // Setting the Zen mode to either DevMode / Production
     zen.SetCurrentMode(zen.DevMode)
 
     // Global middleware
-    app.Use(
+    app.Apply(
         zen.Logger(),                    // Request logging
         middleware.SecurityMiddleware(), // Security features
         middleware.DefaultCors(),        // CORS protection
         middleware.RateLimiter(),        // API rate limiting
     )
 
-    // Basic routes
+    // Registering a basic GET route
     app.GET("/", func(c *zen.Context) {
-        c.JSON(http.StatusOK, map[string]interface{}{
-            "message": "Welcome to Zen!",
-        })
+        c.Success(http.StatusOK, nil, "Welcome to Zen!")
     })
 
     // Start server
@@ -107,28 +102,13 @@ func main() {
 
 ## Middleware Documentation
 
-### Authentication Middleware
+Zen offers a ton of pre-built useful middleware support that are necessary for building servers. These middleware includes:
 
-Zen provides a flexible JWT-based authentication system with features including:
-
-- Multiple token sources (Header, Query, Cookie)
-- Custom claims support
-- Role-based access control
-- Configurable unauthorized responses
-
-```go
-// Basic Auth Setup
-app.Use(middleware.Auth("your-secret-key"))
-
-// Advanced Configuration
-authConfig := middleware.AuthConfig{
-    SecretKey:     "your-secret-key",
-    TokenLookup:   "header:Authorization",
-    TokenHeadName: "Bearer",
-    SkipPaths:     []string{"/public"},
-}
-app.Use(middleware.AuthWithConfig(authConfig))
-```
+- Cross-Origin-Resource-Sharing (CORS)
+- Authentication (JWT-auth)
+- Rate Limiting (beta)
+- Security Headers & Protections (beta)
+- API gateway (beta)
 
 ### CORS Middleware
 
@@ -142,14 +122,43 @@ corsConfig := middleware.CORSConfig{
     AllowCredentials: true,
     MaxAge:          3600,
 }
-app.Use(middleware.CORSWithConfig(corsConfig))
+app.Apply(middleware.CORSWithConfig(corsConfig))
+```
+
+Read the full detailed documentation for [CORS](docs/cors.md) at this link.
+
+### Authentication
+
+Zen provides a flexible JWT-based authentication system with features including:
+
+- Multiple token sources (Header, Query, Cookie)
+- Custom claims support
+- Role-based access control
+- Configurable unauthorized responses
+
+Read the full detailed documentation for [Authentication](docs/auth.md) at this link.
+
+```go
+// Basic Auth Setup
+app.Apply(middleware.Auth("your-secret-key"))
+
+// Advanced Configuration
+authConfig := middleware.AuthConfig{
+    SecretKey:     "your-secret-key",
+    TokenLookup:   "header:Authorization",
+    TokenHeadName: "Bearer",
+    SkipPaths:     []string{"/public"},
+}
+app.Apply(middleware.AuthWithConfig(authConfig))
 ```
 
 Support for other authentication strategies will be added including `oauth`, `csrf-protection`, `sessions` and more.
 
 ### Rate Limiter Middleware:
 
-Zen also comes pre-built will rate-limiting strategies to prevent your applications against resource abuse and attatcks.
+Zen also comes pre-built will rate-limiting strategies to prevent your applications against resource abuse and attacks.
+
+Check out the detailed [Rate Limiter](docs/rate_limiter.md) documentation for usage guides and help.
 
 ```go
 rateConfig := middleware.RateLimitConfig{
@@ -159,7 +168,7 @@ rateConfig := middleware.RateLimitConfig{
     BurstLimit: 20,
     ExcludePaths: []string{"/health"},
 }
-app.Use(middleware.RateLimiterMiddleware(rateConfig))
+app.Apply(middleware.RateLimiterMiddleware(rateConfig))
 ```
 
 Features:
@@ -183,7 +192,7 @@ securityConfig := middleware.SecurityConfig{
     },
     MaxRequestSize: 5 * 1024 * 1024,
 }
-app.Use(middleware.SecurityMiddleware(securityConfig))
+app.Apply(middleware.SecurityMiddleware(securityConfig))
 ```
 
 Features:
@@ -192,6 +201,10 @@ Features:
 - Request Sanitization
 - IP Security
 - Session Security
+
+### Logger
+
+Go to [Logger Documentation](/docs/logger.md) to see how you can use zen logger and further customize it.
 
 ## Context Functions
 
@@ -206,7 +219,7 @@ Retrieve the client's IP address with fallback options:
 ```go
 app.GET("/ip", func(c *zen.Context) {
     clientIP := c.GetClientIP() // Checks X-Real-IP, X-Forwarded-For, and RemoteAddr
-    c.JSON(http.StatusOK, clientIP)
+    c.Success(http.StatusOK, clientIP, "OK")
 })
 ```
 
@@ -225,13 +238,13 @@ app.POST("/user", func(c *zen.Context) {
 
     // Option 1: Basic parsing
     if err := c.ParseJSON(&user); err != nil {
-        c.JSON(http.StatusBadRequest,err.Error())
+        c.Error(http.StatusBadRequest, err.Error())
         return
     }
 
     // Option 2: Try parsing with boolean response
     if !c.TryParseJSON(&user) {
-        c.JSON(http.StatusBadRequest, "Invalid JSON")
+        c.Error(http.StatusBadRequest, err.Error(), "Invalid JSON")
         return
     }
 
@@ -249,7 +262,7 @@ app.POST("/user", func(c *zen.Context) {
 ```go
 app.GET("/headers", func(c *zen.Context) {
     userAgent := c.GetHeader("User-Agent")
-    c.JSON(http.StatusOK, userAgent)
+    c.Success(http.StatusOK, userAgent, "OK")
 })
 ```
 
@@ -260,7 +273,7 @@ Access URL path parameters:
 ```go
 app.GET("/users/:id", func(c *zen.Context) {
     userID := c.GetParam("id")
-    c.JSON(http.StatusOK, userID)
+    c.Success(http.StatusOK, userID, "OK")
 })
 ```
 
@@ -279,14 +292,73 @@ app.GET("/search", func(c *zen.Context) {
     // Setting query parameters
     c.SetQueryParam("page", "2")
 
-    c.JSON(http.StatusOK, map[string]interface{}{
+    c.JSON(http.StatusOK, zen.M{
         "query": query,
         "allParams": allParams,
     })
 })
 ```
 
+#### Getting Request Method
+
+```go
+method := c.GetMethod()
+```
+
+#### Getting URL path
+
+```go
+path := c.GetURLPath()
+```
+
+#### Getting Host Address
+
+```go
+host := c.GetHost()
+```
+
 ### Response Functions
+
+#### Success Responses
+
+Send successful responses with data:
+
+```go
+app.GET("/users", func(c *zen.Context) {
+    users := []User{...}
+    c.Success(http.StatusOK, users, "Users retrieved successfully")
+})
+
+// Example with map data
+app.GET("/profile", func(c *zen.Context) {
+    c.Success(http.StatusOK, zen.M{
+        "user": user,
+        "settings": settings,
+        "lastLogin": time.Now(),
+    }, "Profile retrieved successfully")
+})
+```
+
+#### Error Responses
+
+Send error responses with optional details:
+
+```go
+// Basic error
+app.GET("/user/:id", func(c *zen.Context) {
+    c.Error(http.StatusNotFound, "User not found")
+})
+
+// Error with details
+app.POST("/users", func(c *zen.Context) {
+    if err := validateUser(user); err != nil {
+        c.Error(http.StatusBadRequest, "Validation failed", err)
+        return
+    }
+})
+```
+
+For more details, visit the [Response Helpers Documentation](docs/response.md).
 
 #### JSON Responses
 
@@ -354,12 +426,12 @@ app.GET("/set-cookie", func(c *zen.Context) {
 app.GET("/get-cookie", func(c *zen.Context) {
     cookie, err := c.GetCookie("session")
     if err != nil {
-        c.JSON(http.StatusBadRequest, map[string]string{
+        c.JSON(http.StatusBadRequest, zen.M{
             "error": "Cookie not found",
         })
         return
     }
-    c.JSON(http.StatusOK, map[string]string{
+    c.JSON(http.StatusOK, zen.M{
         "cookieValue": cookie.Value,
     })
 })
@@ -371,7 +443,7 @@ app.GET("/get-cookie", func(c *zen.Context) {
 app.GET("/content-type", func(c *zen.Context) {
     c.SetContentType("application/json")
     contentType := c.GetContentType()
-    c.JSON(http.StatusOK, map[string]string{
+    c.JSON(http.StatusOK, zen.M{
         "contentType": contentType,
     })
 })
@@ -388,11 +460,11 @@ app.GET("/timeout", func(c *zen.Context) {
 
     select {
     case <-ctx.Done():
-        c.JSON(http.StatusGatewayTimeout, map[string]string{
+        c.JSON(http.StatusGatewayTimeout, zen.M{
             "error": "Request timeout",
         })
     case <-time.After(5 * time.Second):
-        c.JSON(http.StatusOK, map[string]string{
+        c.JSON(http.StatusOK, zen.M{
             "message": "Operation completed",
         })
     }
@@ -410,7 +482,7 @@ app.GET("/context-values", func(c *zen.Context) {
 
     // Get context value
     if user, ok := newCtx.Value(userKey).(string); ok {
-        c.JSON(http.StatusOK, map[string]string{
+        c.JSON(http.StatusOK, zen.M{
             "user": user,
         })
     }
@@ -423,7 +495,7 @@ app.GET("/context-values", func(c *zen.Context) {
 package main
 
 import (
-    "github.com/ThembinkosiThemba/zen/pkg/zen"
+    "github.com/ThembinkosiThemba/zen"
     "github.com/ThembinkosiThemba/zen/pkg/middleware"
     "time"
 )
@@ -464,7 +536,7 @@ func main() {
     }
 
     // Apply middleware
-    app.Use(
+    app.Apply(
         zen.Logger(),
         middleware.SecurityMiddleware(securityConfig),
         middleware.CORSWithConfig(corsConfig),
@@ -474,23 +546,16 @@ func main() {
 
     // Public routes
     app.GET("/public", func(c *zen.Context) {
-        c.JSON(http.StatusOK, map[string]interface{}{
-            "message": "Public endpoint",
-        })
+        c.Success(http.StatusOK, nil, "public endpoint")
     })
 
     // Protected routes
     api := app.Group("/api")
     api.GET("/protected", func(c *zen.Context) {
         claims, _ := middleware.GetClaims[*middleware.BaseClaims](c)
-        c.JSON(http.StatusOK, map[string]interface{}{
-            "message": "Protected endpoint",
-            "user":    claims.UserID,
-        })
+        c.Success(http.StatusOK, claims.UserID, "public endpoint")
     })
 
-    // Start server with hot reload
-    zen.HotReloadEnabled = true // Enable hot reloading
     app.Serve(":8080")
 }
 ```
@@ -529,11 +594,8 @@ func main() {
 
 Detailed documentation for each component:
 
-- [Authentication](docs/auth.md)
-- [CORS](docs/cors.md)
-- [Rate Limiter](docs/rate_limiter.md)
 - [Security](docs/security.md)
 
 ## License
 
-MIT License - see LICENSE file for details
+MIT License - see [LICENSE](/LICENSE) file for details

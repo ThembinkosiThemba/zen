@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ThembinkosiThemba/zen/pkg/zen"
+	"github.com/ThembinkosiThemba/zen"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -128,7 +128,7 @@ func getToken(c *zen.Context, config AuthConfig) (string, error) {
 	parts := strings.Split(config.TokenLookup, ":")
 	switch parts[0] {
 	case "header":
-		auth := c.Request.Header.Get(parts[1])
+		auth := c.GetHeader(parts[1])
 		if auth == "" {
 			return "", ErrMissingToken
 		}
@@ -140,13 +140,13 @@ func getToken(c *zen.Context, config AuthConfig) (string, error) {
 		}
 		return auth, nil
 	case "query":
-		token := c.Request.URL.Query().Get(parts[1])
+		token := c.GetQueryParam(parts[1])
 		if token == "" {
 			return "", ErrMissingToken
 		}
 		return token, nil
 	case "cookie":
-		cookie, err := c.Request.Cookie(parts[1])
+		cookie, err := c.GetCookie(parts[1])
 		if err != nil {
 			return "", ErrMissingToken
 		}

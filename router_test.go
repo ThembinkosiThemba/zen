@@ -57,7 +57,7 @@ func TestRouterGroup_Middleware(t *testing.T) {
 		handlerCalled = true
 	}
 
-	group.Use(middleware)
+	group.Apply(middleware)
 	group.GET("/test", handler)
 
 	w := httptest.NewRecorder()
@@ -189,7 +189,7 @@ func TestRouterGroup_Use(t *testing.T) {
 		handlerCalled = true
 	}
 
-	group.Use(middleware)
+	group.Apply(middleware)
 	group.GET("/test", handler)
 
 	w := httptest.NewRecorder()
