@@ -21,9 +21,9 @@ type Router struct {
 // RouterGroup represents a logical grouping of routes with shared prefix and middleware.
 // It enables modular organization of routes and middleware scoping.
 type RouterGroup struct {
-	prefix      string        // prefix is the URL prefix for all routes in this group
-	middlewares []HandlerFunc // middleware stores middleware specific to this group
-	engine      *Engine       // engine points to the main Engine instance
+	prefix      string        // prefix is the URL prefix for all routes in this router group
+	middlewares []HandlerFunc // middleware stores middleware specific to this router group
+	engine      *Engine       // engine points to the main Engine instance for the zen framework
 }
 
 // NewRouter initializes and returns a new Router instance with empty handler maps
@@ -35,44 +35,18 @@ func NewRouter() *Router {
 	}
 }
 
-// Use adds middleware functions to the current RouterGroup.
-// These middlewares will only be executed for routes defined in this group
-// and its subgroups.
-func (group *RouterGroup) Use(middleware ...HandlerFunc) {
-	group.middlewares = append(group.middlewares, middleware...)
-	// group.engine.router.Use(middleware...)
-}
-
-func (r *Router) handleOptions(c *Context) {
-	methodHandlers := r.handlers[http.MethodOptions]
-	for pattern, handlers := range methodHandlers {
-		if params, ok := matchPath(pattern, c.Request.URL.Path); ok {
-			c.Params = params
-			c.Handlers = append(r.globalMiddleware, handlers...)
-			c.Next()
-			return
-		}
-	}
-
-	// If no specific handler is found, execute global middleware
-	if len(r.globalMiddleware) > 0 {
-		c.Handlers = r.globalMiddleware
-		c.Next()
-		// Only set 204 if no response was written by middleware
-		if c.Writer.Status() == 0 {
-			c.Text(http.StatusNoContent, "")
-		}
-		return
-	}
-
-	c.Text(http.StatusNoContent, "")
-}
-
-// Use adds middleware functions to the global middleware stack.
+// Apply[Router] applies middleware functions to the global middleware stack.
 // These middlewares will be executed for all routes in the application.
 // Middleware functions are executed in the order they are added.
-func (r *Router) Use(middleware ...HandlerFunc) {
+func (r *Router) Apply(middleware ...HandlerFunc) {
 	r.globalMiddleware = append(r.globalMiddleware, middleware...)
+}
+
+// Apply[RouterGroup] applies middleware functions to the current RouterGroup.
+// These middlewares will only be executed for routes defined in this group
+// and its subgroups.
+func (group *RouterGroup) Apply(middleware ...HandlerFunc) {
+	group.middlewares = append(group.middlewares, middleware...)
 }
 
 // GroupRoutes creates a new RouterGroup with the given URL prefix.
@@ -163,8 +137,8 @@ func (group *RouterGroup) HEAD(pattern string, handler HandlerFunc) {
 // handle processes incoming HTTP requests by matching the request path
 // to registered routes and executing the corresponding handler chain.
 func (r *Router) handle(c *Context) {
-	method := c.Request.Method
-	path := c.Request.URL.Path
+	method := c.GetMethod()
+	path := c.GetURLPath()
 
 	if method == http.MethodOptions {
 		r.handleOptions(c)
@@ -226,4 +200,29 @@ func matchPath(pattern, path string) (map[string]string, bool) {
 	}
 
 	return params, true
+}
+
+func (r *Router) handleOptions(c *Context) {
+	methodHandlers := r.handlers[http.MethodOptions]
+	for pattern, handlers := range methodHandlers {
+		if params, ok := matchPath(pattern, c.Request.URL.Path); ok {
+			c.Params = params
+			c.Handlers = append(r.globalMiddleware, handlers...)
+			c.Next()
+			return
+		}
+	}
+
+	// If no specific handler is found, execute global middleware
+	if len(r.globalMiddleware) > 0 {
+		c.Handlers = r.globalMiddleware
+		c.Next()
+		// Only set 204 if no response was written by middleware
+		if c.Writer.Status() == 0 {
+			c.Text(http.StatusNoContent, "")
+		}
+		return
+	}
+
+	c.Text(http.StatusNoContent, "")
 }

@@ -4,8 +4,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ThembinkosiThemba/zen/pkg/zen"
-	"github.com/ThembinkosiThemba/zen/pkg/zen/middleware"
+	"github.com/ThembinkosiThemba/zen"
+	"github.com/ThembinkosiThemba/zen/middleware"
 )
 
 func BenchmarkBasicRouting(b *testing.B) {
@@ -46,7 +46,7 @@ func BenchmarkParameterizedRouting(b *testing.B) {
 
 func BenchmarkCORSMiddleware(b *testing.B) {
 	engine := zen.New()
-	engine.Use(middleware.DefaultCors())
+	engine.Apply(middleware.DefaultCors())
 	engine.GET("/test", func(c *zen.Context) {
 		c.Text(200, "hello")
 	})

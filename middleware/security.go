@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ThembinkosiThemba/zen/pkg/zen"
+	"github.com/ThembinkosiThemba/zen"
 )
 
 // SecurityStrategy defines the type of security measures to enable

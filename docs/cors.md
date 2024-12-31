@@ -2,6 +2,14 @@
 
 The CORS (Cross-Origin Resource Sharing) middleware for Zen framework provides a flexible way to handle cross-origin requests with customizable configurations.
 
+## Table of Contents
+
+- [Features](#Features)
+- [Basic Usage](#basic-usage)
+- [Configuration Options](#configuration-options)
+- [Custom Configuration](#custom-configuration)
+- [Security Considerations](#security-considerations)
+
 ## Features
 
 - Configurable allowed origins
@@ -13,23 +21,38 @@ The CORS (Cross-Origin Resource Sharing) middleware for Zen framework provides a
 
 ## Basic Usage
 
+This simple uses default CORS configurations.
+
 ```go
 func main() {
     app := zen.New()
-    
-    // Use default CORS middleware
-    app.Use(middleware.DefaultCors())
-    
+
+    // Apply default CORS middleware
+    app.Apply(middleware.DefaultCors())
+
     app.Serve(":8080")
 }
 ```
 
+## Configuration Options
+
+| Option           | Type     | Description                 | Default                                                      |
+| ---------------- | -------- | --------------------------- | ------------------------------------------------------------ |
+| AllowOrigins     | []string | List of allowed origins     | ["*"]                                                        |
+| AllowMethods     | []string | Allowed HTTP methods        | ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] |
+| AllowHeaders     | []string | Allowed HTTP headers        | []                                                           |
+| AllowCredentials | bool     | Allow credentials           | false                                                        |
+| ExposeHeaders    | []string | Headers that can be exposed | []                                                           |
+| MaxAge           | int      | Preflight cache duration    | 0                                                            |
+
 ## Custom Configuration
+
+You can use a more fine-grained control measure with CORS and set up your custom configurations:
 
 ```go
 func main() {
     app := zen.New()
-    
+
     config := middleware.CORSConfig{
         AllowOrigins:     []string{"https://example.com", "https://api.example.com"},
         AllowMethods:     []string{"GET", "POST", "PUT", "DELETE"},
@@ -38,23 +61,12 @@ func main() {
         ExposeHeaders:    []string{"Content-Length"},
         MaxAge:          3600,
     }
-    
-    app.Use(middleware.CORSWithConfig(config))
-    
+
+    app.Apply(middleware.CORSWithConfig(config))
+
     app.Serve(":8080")
 }
 ```
-
-## Configuration Options
-
-| Option | Type | Description | Default |
-|--------|------|-------------|---------|
-| AllowOrigins | []string | List of allowed origins | ["*"] |
-| AllowMethods | []string | Allowed HTTP methods | ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] |
-| AllowHeaders | []string | Allowed HTTP headers | [] |
-| AllowCredentials | bool | Allow credentials | false |
-| ExposeHeaders | []string | Headers that can be exposed | [] |
-| MaxAge | int | Preflight cache duration | 0 |
 
 ## Security Considerations
 
@@ -63,32 +75,4 @@ func main() {
 3. Enable `AllowCredentials` only when necessary
 4. Set appropriate `MaxAge` to reduce preflight requests
 
-## Examples
-
-### Specific Origins
-
-```go
-config := middleware.CORSConfig{
-    AllowOrigins: []string{
-        "https://app.example.com",
-        "https://admin.example.com",
-    },
-}
-app.Use(middleware.CORSWithConfig(config))
-```
-
-### API Configuration
-
-```go
-config := middleware.CORSConfig{
-    AllowOrigins: []string{"https://api.example.com"},
-    AllowMethods: []string{"GET", "POST", "PUT", "DELETE"},
-    AllowHeaders: []string{
-        "Origin",
-        "Content-Type",
-        "Authorization",
-        "X-API-Key",
-    },
-    MaxAge: 3600,
-}
-```
+For additional details and updates, visit the [GitHub repository](https://github.com/ThembinkosiThemba/zen).

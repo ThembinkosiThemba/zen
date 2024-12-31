@@ -222,6 +222,27 @@ func (c *Context) GetHeader(key string) string {
 	return c.Request.Header.Get(key)
 }
 
+// GetPath returns the URL path
+func (c *Context) GetURLPath() string {
+	return c.Request.URL.Path
+}
+
+// GetHost returns the host address
+func (c *Context) GetHost() string {
+	return c.Request.URL.Host
+}
+
+// GetRawQuery returns encoded query values, without '?'
+func (c *Context) GetRawQuery() string {
+	return c.Request.URL.RawQuery
+}
+
+// GetMethod returns the HTTP method (GET, POST, PUT, etc.).
+// For client requests, an empty string means GET.
+func (c *Context) GetMethod() string {
+	return c.Request.Method
+}
+
 // SetQueryParam adds a query parameter to the request URL
 func (c *Context) SetQueryParam(key, value string) {
 	query := c.Request.URL.Query()

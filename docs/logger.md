@@ -1,12 +1,10 @@
 # Logger Middleware Documentation
 
-The Logger middleware for Zen framework provides request logging capabilities with customizable formatting, colored output, and file logging support.
+The Logger middleware for Zen framework provides request logging capabilities with customizable formatting, and file logging support.
 
 ## Features
 
 - Request timing
-- Status code coloring
-- Method coloring
 - Path logging
 - IP address logging
 - Latency measurement
@@ -105,3 +103,5 @@ config := zen.LoggerConfig{
 }
 app.Use(zen.Logger(config))
 ```
+
+For additional details and updates, visit the [GitHub repository](https://github.com/ThembinkosiThemba/zen).

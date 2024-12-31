@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ThembinkosiThemba/zen/pkg/zen"
+	"github.com/ThembinkosiThemba/zen"
 )
 
 // RateLimitStrategy defines the type of rate limiting to use
