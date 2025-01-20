@@ -140,37 +140,42 @@ func (r *Router) handle(c *Context) {
 	method := c.GetMethod()
 	path := c.GetURLPath()
 
+	methodHandlers, methodExists := r.handlers[method]
+	if !methodExists {
+		c.JSON(http.StatusNotFound, M{
+			"error":  "Method not found",
+			"code":   404,
+			"path":   path,
+			"method": method,
+		})
+		return
+	}
+
 	if method == http.MethodOptions {
 		r.handleOptions(c)
 		return
 	}
 
-	if methodHandlers := r.handlers[method]; methodHandlers != nil {
-		for pattern, handlers := range methodHandlers {
-			if params, ok := matchPath(pattern, path); ok {
-				c.Params = params
-				// Combine global middleware with route handlers
-				c.Handlers = handlers
-				c.Next()
-				return
-			}
+	matched := false
+	for pattern, handlers := range methodHandlers {
+		if params, ok := matchPath(pattern, path); ok {
+			matched = true
+			c.Params = params
+			c.Handlers = handlers
+			c.Next()
+			return
 		}
 	}
 
-	// If no route matches, we will still execute global middleware
-	if len(r.globalMiddleware) > 0 {
-		c.Handlers = r.globalMiddleware
-		c.Next()
-		// Only set 404 if no response was written by middleware
-		if c.Writer.Status() == 0 {
-			c.Writer.WriteHeader(http.StatusNotFound)
-			c.Writer.Write([]byte("404 NOT FOUND"))
-		}
+	if !matched {
+		c.JSON(http.StatusNotFound, M{
+			"error":  "Route not found",
+			"code":   404,
+			"path":   path,
+			"method": method,
+		})
 		return
 	}
-
-	c.Writer.WriteHeader(http.StatusNotFound)
-	c.Writer.Write([]byte("404 NOT FOUND"))
 }
 
 // matchPath determines if a request path matches a route pattern and extracts
