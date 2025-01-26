@@ -198,3 +198,4 @@
 2024/12/20 08:21:26 200 |     335.619µs |     [::1]:54666 | GET     /
 2024/12/31 01:53:17 200 |      76.485µs | 127.0.0.1:39970 | POST    /users
 2024/12/31 11:27:56 2024/12/31 11:27:56 [INFO] Initialized file logger at: /home/bane/Desktop/zen/logs/zen.log
+2025/01/26 09:03:06 2025/01/26 09:03:06 [INFO] Initialized file logger at: /home/bane/Desktop/zen/logs/zen.log
