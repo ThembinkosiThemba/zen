@@ -6,7 +6,7 @@
 Zen is a lightweight and fast HTTP framework for Go, focusing on simplicity and performance while providing enterprise-grade features for modern web applications. Zen has a security-first focus providing a range of middleware such as authentication, ratelimiting, api gateway functionaly and CORS support.
 
 ![go version](https://img.shields.io/badge/go-%3E%3D1.18-blue)
-![version](https://img.shields.io/badge/version-v0.1.9-blue)
+![version](https://img.shields.io/badge/version-v0.2.1-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 > All important tools in one project, which makes it ideal.
@@ -62,7 +62,7 @@ Zen is a lightweight and fast HTTP framework for Go, focusing on simplicity and 
 ### Installation
 
 ```bash
-go get github.com/ThembinkosiThemba/zen@v0.1.9
+go get github.com/ThembinkosiThemba/zen@v0.2.1
 ```
 
 ### Basic Example
