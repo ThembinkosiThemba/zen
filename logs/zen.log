@@ -197,4 +197,7 @@
 2024/12/20 08:21:26 204 |         373ns |     [::1]:54666 | OPTIONS /
 2024/12/20 08:21:26 200 |     335.619µs |     [::1]:54666 | GET     /
 2024/12/31 01:53:17 200 |      76.485µs | 127.0.0.1:39970 | POST    /users
-2024/12/31 11:27:56 2024/12/31 11:27:56 [INFO] Initialized file logger at: /home/bane/Desktop/zen/logs/zen.log
+2024/12/31 11:27:56 2024/12/31 11:27:56 [INFO] Initialized file logger at: /home/bane/Desktop/zen/logs/zen.log2025/01/28 09:50:40 2025/01/28 09:50:40 [INFO] Initialized file logger at: /home/bane/Desktop/zen/logs/zen.log
+2025/01/28 09:50:47 200 |      36.213µs |     [::1]:47814 | GET     /
+2025/01/28 09:50:52 404 |         717ns |     [::1]:47814 | GET     /sffef
+2025/01/28 09:50:57 200 |     119.634µs |     [::1]:47814 | GET     /users

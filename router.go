@@ -169,17 +169,6 @@ func (r *Router) handle(c *Context) {
 	method := c.GetMethod()
 	path := c.GetURLPath()
 
-	methodHandlers, methodExists := r.handlers[method]
-	if !methodExists {
-		c.JSON(http.StatusNotFound, M{
-			"error":  "Method not found",
-			"code":   404,
-			"path":   path,
-			"method": method,
-		})
-		return
-	}
-
 	if method == http.MethodOptions {
 		r.handleOptions(c)
 		return
