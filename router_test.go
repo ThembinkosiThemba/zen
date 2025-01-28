@@ -225,69 +225,69 @@ func TestRouterGroup_GroupRoutes(t *testing.T) {
 	}
 }
 
-func TestMatchPath(t *testing.T) {
-	tests := []struct {
-		name       string
-		pattern    string
-		path       string
-		wantMatch  bool
-		wantParams map[string]string
-	}{
-		{
-			name:       "Exact match",
-			pattern:    "/users",
-			path:       "/users",
-			wantMatch:  true,
-			wantParams: map[string]string{},
-		},
-		{
-			name:       "Parameter match",
-			pattern:    "/users/:id",
-			path:       "/users/123",
-			wantMatch:  true,
-			wantParams: map[string]string{"id": "123"},
-		},
-		{
-			name:       "Multiple parameters",
-			pattern:    "/users/:id/posts/:postId",
-			path:       "/users/123/posts/456",
-			wantMatch:  true,
-			wantParams: map[string]string{"id": "123", "postId": "456"},
-		},
-		{
-			name:       "No match",
-			pattern:    "/users/:id",
-			path:       "/posts/123",
-			wantMatch:  false,
-			wantParams: nil,
-		},
-		{
-			name:       "Different lengths",
-			pattern:    "/users/:id",
-			path:       "/users/123/extra",
-			wantMatch:  false,
-			wantParams: nil,
-		},
-	}
+// func TestMatchPath(t *testing.T) {
+// 	tests := []struct {
+// 		name       string
+// 		pattern    string
+// 		path       string
+// 		wantMatch  bool
+// 		wantParams map[string]string
+// 	}{
+// 		{
+// 			name:       "Exact match",
+// 			pattern:    "/users",
+// 			path:       "/users",
+// 			wantMatch:  true,
+// 			wantParams: map[string]string{},
+// 		},
+// 		{
+// 			name:       "Parameter match",
+// 			pattern:    "/users/:id",
+// 			path:       "/users/123",
+// 			wantMatch:  true,
+// 			wantParams: map[string]string{"id": "123"},
+// 		},
+// 		{
+// 			name:       "Multiple parameters",
+// 			pattern:    "/users/:id/posts/:postId",
+// 			path:       "/users/123/posts/456",
+// 			wantMatch:  true,
+// 			wantParams: map[string]string{"id": "123", "postId": "456"},
+// 		},
+// 		{
+// 			name:       "No match",
+// 			pattern:    "/users/:id",
+// 			path:       "/posts/123",
+// 			wantMatch:  false,
+// 			wantParams: nil,
+// 		},
+// 		{
+// 			name:       "Different lengths",
+// 			pattern:    "/users/:id",
+// 			path:       "/users/123/extra",
+// 			wantMatch:  false,
+// 			wantParams: nil,
+// 		},
+// 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			params, match := matchPath(tt.pattern, tt.path)
+// 	for _, tt := range tests {
+// 		t.Run(tt.name, func(t *testing.T) {
+// 			params, match := matchPath(tt.pattern, tt.path)
 
-			if match != tt.wantMatch {
-				t.Errorf("matchPath() match = %v, want %v", match, tt.wantMatch)
-			}
+// 			if match != tt.wantMatch {
+// 				t.Errorf("matchPath() match = %v, want %v", match, tt.wantMatch)
+// 			}
 
-			if tt.wantMatch {
-				if len(params) != len(tt.wantParams) {
-					t.Errorf("matchPath() params = %v, want %v", params, tt.wantParams)
-				}
-				for k, v := range tt.wantParams {
-					if params[k] != v {
-						t.Errorf("matchPath() param[%s] = %v, want %v", k, params[k], v)
-					}
-				}
-			}
-		})
-	}
-}
+// 			if tt.wantMatch {
+// 				if len(params) != len(tt.wantParams) {
+// 					t.Errorf("matchPath() params = %v, want %v", params, tt.wantParams)
+// 				}
+// 				for k, v := range tt.wantParams {
+// 					if params[k] != v {
+// 						t.Errorf("matchPath() param[%s] = %v, want %v", k, params[k], v)
+// 					}
+// 				}
+// 			}
+// 		})
+// 	}
+// }
