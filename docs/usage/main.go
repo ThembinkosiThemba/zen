@@ -28,7 +28,7 @@ func main() {
 		c.JSON(http.StatusOK, "Welcome to Zen!")
 	})
 
-	app.POST("/users", func(c *zen.Context) {
+	app.GET("/users", func(c *zen.Context) {
 		user := zen.M{"name": "Thembinkosi", "surname": "Mkhonta"}
 		c.Success(http.StatusOK, user, "User retrieved successfully")
 	})

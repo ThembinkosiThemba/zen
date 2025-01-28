@@ -2,6 +2,7 @@ package zen
 
 import (
 	"net/http"
+	"regexp"
 	"strings"
 )
 
@@ -16,6 +17,15 @@ type Router struct {
 	handlers map[string]map[string][]HandlerFunc
 	// globalMiddleware stores middleware that applies to all routes.
 	globalMiddleware []HandlerFunc
+
+	validationConfig ValidationConfig
+}
+
+// ValidationConfig holds configuration for path parameter validation
+type ValidationConfig struct {
+	maxLenght         int
+	allowedPattern    *regexp.Regexp
+	dangerousPatterns []string
 }
 
 // RouterGroup represents a logical grouping of routes with shared prefix and middleware.
@@ -29,9 +39,22 @@ type RouterGroup struct {
 // NewRouter initializes and returns a new Router instance with empty handler maps
 // and middleware slices.
 func NewRouter() *Router {
+	defaultValidation := ValidationConfig{
+		maxLenght:      256,
+		allowedPattern: regexp.MustCompile(`^[a-zA-Z0-9\-_]+$`),
+		dangerousPatterns: []string{
+			"../", "..\\", // Path traversal
+			"<", ">", // HTML/XML injection
+			";",       // Command injection
+			"'", "\"", // SQL injection
+			"\x00",     // Null byte
+			"\n", "\r", // CRLF injection
+		},
+	}
 	return &Router{
 		handlers:         make(map[string]map[string][]HandlerFunc),
-		globalMiddleware: make([]HandlerFunc, 0),
+		globalMiddleware: make([]HandlerFunc, 0, 10), // keeping the middleware that can be applied to 10
+		validationConfig: defaultValidation,
 	}
 }
 
@@ -62,7 +85,7 @@ func (group *RouterGroup) GroupRoutes(prefix string) *RouterGroup {
 	newGroup := &RouterGroup{
 		prefix:      group.prefix + prefix,
 		engine:      engine,
-		middlewares: make([]HandlerFunc, len(group.middlewares)),
+		middlewares: make([]HandlerFunc, 0, len(group.middlewares)),
 	}
 	copy(newGroup.middlewares, group.middlewares)
 	engine.groups = append(engine.groups, newGroup)
@@ -134,6 +157,12 @@ func (group *RouterGroup) HEAD(pattern string, handler HandlerFunc) {
 	group.addRoute("HEAD", pattern, handler)
 }
 
+func (r *Router) writeNotFound(c *Context) {
+	c.Status(http.StatusNotFound)
+	c.Writer.Write([]byte("404 NOT FOUND"))
+	// c.Quit()
+}
+
 // handle processes incoming HTTP requests by matching the request path
 // to registered routes and executing the corresponding handler chain.
 func (r *Router) handle(c *Context) {
@@ -147,9 +176,8 @@ func (r *Router) handle(c *Context) {
 
 	if methodHandlers := r.handlers[method]; methodHandlers != nil {
 		for pattern, handlers := range methodHandlers {
-			if params, ok := matchPath(pattern, path); ok {
+			if params, ok := r.matchPath(pattern, path); ok {
 				c.Params = params
-				// Combine global middleware with route handlers
 				c.Handlers = handlers
 				c.Next()
 				return
@@ -160,17 +188,11 @@ func (r *Router) handle(c *Context) {
 	// If no route matches, we will still execute global middleware
 	if len(r.globalMiddleware) > 0 {
 		c.Handlers = r.globalMiddleware
+		r.writeNotFound(c)
 		c.Next()
-		// Only set 404 if no response was written by middleware
-		if c.Writer.Status() == 0 {
-			c.Writer.WriteHeader(http.StatusNotFound)
-			c.Writer.Write([]byte("404 NOT FOUND"))
-		}
-		return
+	} else {
+		r.writeNotFound(c)
 	}
-
-	c.Writer.WriteHeader(http.StatusNotFound)
-	c.Writer.Write([]byte("404 NOT FOUND"))
 }
 
 // matchPath determines if a request path matches a route pattern and extracts
@@ -181,9 +203,10 @@ func (r *Router) handle(c *Context) {
 //	pattern: "/users/:id"
 //	path:    "/users/123"
 //	result:  params["id"] = "123"
-func matchPath(pattern, path string) (map[string]string, bool) {
-	patternParts := strings.Split(strings.Trim(pattern, "/"), "/")
-	pathParts := strings.Split(strings.Trim(path, "/"), "/")
+func (r *Router) matchPath(pattern, path string) (map[string]string, bool) {
+	splitTrim := func(c rune) bool { return c == '/' || c == ' ' }
+	patternParts := strings.FieldsFunc(pattern, splitTrim)
+	pathParts := strings.FieldsFunc(path, splitTrim)
 
 	if len(patternParts) != len(pathParts) {
 		return nil, false
@@ -193,6 +216,12 @@ func matchPath(pattern, path string) (map[string]string, bool) {
 	for i := 0; i < len(patternParts); i++ {
 		if strings.HasPrefix(patternParts[i], ":") {
 			paramName := strings.TrimPrefix(patternParts[i], ":")
+			paramValue := pathParts[i]
+
+			if !r.validatePathParam(paramValue) {
+				return nil, false
+			}
+
 			params[paramName] = pathParts[i]
 		} else if patternParts[i] != pathParts[i] {
 			return nil, false
@@ -205,7 +234,7 @@ func matchPath(pattern, path string) (map[string]string, bool) {
 func (r *Router) handleOptions(c *Context) {
 	methodHandlers := r.handlers[http.MethodOptions]
 	for pattern, handlers := range methodHandlers {
-		if params, ok := matchPath(pattern, c.Request.URL.Path); ok {
+		if params, ok := r.matchPath(pattern, c.Request.URL.Path); ok {
 			c.Params = params
 			c.Handlers = append(r.globalMiddleware, handlers...)
 			c.Next()
@@ -213,16 +242,34 @@ func (r *Router) handleOptions(c *Context) {
 		}
 	}
 
-	// If no specific handler is found, execute global middleware
+	// If no specific handler is found, we execute global middleware like Logger
 	if len(r.globalMiddleware) > 0 {
 		c.Handlers = r.globalMiddleware
 		c.Next()
-		// Only set 204 if no response was written by middleware
+		// 204 error code is set if no response is written by middleware
 		if c.Writer.Status() == 0 {
 			c.Text(http.StatusNoContent, "")
 		}
 		return
 	}
 
-	c.Text(http.StatusNoContent, "")
+	c.JSON(http.StatusNoContent, "")
+}
+
+func (r *Router) validatePathParam(value string) bool {
+	if value == "" {
+		return false
+	}
+
+	if len(value) > r.validationConfig.maxLenght {
+		return false
+	}
+
+	for _, pattern := range r.validationConfig.dangerousPatterns {
+		if strings.Contains(value, pattern) {
+			return false
+		}
+	}
+
+	return r.validationConfig.allowedPattern.MatchString(value)
 }
