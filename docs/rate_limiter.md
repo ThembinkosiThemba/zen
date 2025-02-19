@@ -9,6 +9,8 @@ The Rate Limiter middleware for the Zen framework provides flexible rate limitin
 - [Rate Limiting Strategies](#rate-limiting-strategies)
   - [IP-Based Strategy](#ip-based-strategy)
   - [Sliding Window Strategy](#sliding-window-strategy)
+  - [Token Bucket](#token-bucket-strategy)
+  - [Leaky Bucket](#leaky-bucket-strategy)
 - [Advanced Usage With Custom Configuration](#advanced-usage-with-custom-configuration)
 - [Route Specific Ratelimiting](#route-specific-rate-limiting)
 - [Configuration Options](#configuration-options)
@@ -97,6 +99,72 @@ func main() {
     app.Serve(":8080")
 }
 ```
+
+### Token Bucket Strategy
+
+Token bucket is an algorithm that provides smooth rate limiting with controlled burst capability.
+
+```go
+func main() {
+    app := zen.New()
+
+    config := middleware.RateLimitConfig{
+        Strategy:      middleware.TokenBucket,
+        TokenRate:     10,         // 10 tokens per second
+        BucketSize:    100,        // Maximum bucket capacity
+        BlockDuration: time.Minute, // Block duration after limit exceeded
+    }
+
+    app.Use(middleware.RateLimiterMiddleware(config))
+    app.Serve(":8080")
+}
+```
+
+Implementation details:
+
+- Tokens are added to bucket at a fixed rate
+- Each request consumes one token
+- Allows temporary bursts up to bucket size
+- When empty, requests are denied
+- Optional blocking period after limit exceeded
+
+Best for:
+
+- API rate limiting
+- Scenarios requiring burst handling
+- Smooth request processing
+
+### Leaky Bucket Strategy
+
+Leaky bucket provides constant-rate output with a queue for handling traffic spikes.
+
+```go
+func main() {
+    app := zen.New()
+
+    config := middleware.RateLimitConfig{
+        Strategy:  middleware.Leaky,
+        Limit:     100,    // Queue size
+        LeakRate:  1.0,    // Requests processed per second
+    }
+
+    app.Use(middleware.RateLimiterMiddleware(config))
+    app.Serve(":8080")
+}
+```
+
+Implementation details:
+
+- Requests enter a fixed-size queue
+- Processes requests at constant rate
+- Excess requests are dropped when queue is full
+- Smooths out traffic spikes
+
+Best for:
+
+- Traffic shaping
+- Network bandwidth control
+- Queue-based processing
 
 ## Advanced Usage with Custom Configuration
 

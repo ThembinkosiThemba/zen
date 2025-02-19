@@ -23,10 +23,16 @@ type Router struct {
 
 // ValidationConfig holds configuration for path parameter validation
 type ValidationConfig struct {
-	maxLenght         int
-	allowedPattern    *regexp.Regexp
-	dangerousPatterns []string
+	maxLength         int                     // maximum lenght of parameter value
+	allowedPattern    *regexp.Regexp          // regex pattern for allowed characters
+	dangerousPatterns []string                // patterns to block for security
+	maxParamLength    int                     // maximun length for individual parameters
+	maxParams         int                     // maximum number of parameters per route
+	paramValidators   map[string]ValidateFunc // custom validation for specific params
 }
+
+// ValidateFunc defines a function type for custom parameter validation
+type ValidateFunc func(string) bool
 
 // RouterGroup represents a logical grouping of routes with shared prefix and middleware.
 // It enables modular organization of routes and middleware scoping.
@@ -39,8 +45,17 @@ type RouterGroup struct {
 // NewRouter initializes and returns a new Router instance with empty handler maps
 // and middleware slices.
 func NewRouter() *Router {
-	defaultValidation := ValidationConfig{
-		maxLenght:      256,
+	return &Router{
+		handlers:         make(map[string]map[string][]HandlerFunc),
+		globalMiddleware: make([]HandlerFunc, 0, 10), // keeping the middleware that can be applied to 10
+		validationConfig: newDefaultValidationConfig(),
+	}
+}
+
+// newDefaultValidationConfig creates a secure default configuration
+func newDefaultValidationConfig() ValidationConfig {
+	return ValidationConfig{
+		maxLength:      256,
 		allowedPattern: regexp.MustCompile(`^[a-zA-Z0-9\-_]+$`),
 		dangerousPatterns: []string{
 			"../", "..\\", // Path traversal
@@ -49,12 +64,20 @@ func NewRouter() *Router {
 			"'", "\"", // SQL injection
 			"\x00",     // Null byte
 			"\n", "\r", // CRLF injection
+			"javascript:",         // XSS
+			"data:",               // Data URL schemes
+			"vbscript:",           // VBScript injection
+			"onload=", "onerror=", // Event handler injection
 		},
-	}
-	return &Router{
-		handlers:         make(map[string]map[string][]HandlerFunc),
-		globalMiddleware: make([]HandlerFunc, 0, 10), // keeping the middleware that can be applied to 10
-		validationConfig: defaultValidation,
+		maxParamLength: 64,
+		maxParams:      20,
+		paramValidators: map[string]ValidateFunc{
+			// default validation for common parameter types
+			"id":    validateNumeric,
+			"uuid":  validateUUID,
+			"slug":  validateSlug,
+			"email": validateEmail,
+		},
 	}
 }
 
@@ -212,13 +235,24 @@ func (r *Router) matchPath(pattern, path string) (map[string]string, bool) {
 		return nil, false
 	}
 
+	paramCount := 0
+	for _, part := range patternParts {
+		if strings.HasPrefix(part, ":") {
+			paramCount++
+		}
+	}
+	if paramCount > r.validationConfig.maxParams {
+		Errorf("maximum parameters should be %v", r.validationConfig.maxParams)
+		return nil, false
+	}
+
 	params := make(map[string]string)
 	for i := 0; i < len(patternParts); i++ {
 		if strings.HasPrefix(patternParts[i], ":") {
 			paramName := strings.TrimPrefix(patternParts[i], ":")
 			paramValue := pathParts[i]
 
-			if !r.validatePathParam(paramValue) {
+			if !r.validatePathParam(paramName, paramValue) {
 				return nil, false
 			}
 
@@ -256,20 +290,50 @@ func (r *Router) handleOptions(c *Context) {
 	c.JSON(http.StatusNoContent, "")
 }
 
-func (r *Router) validatePathParam(value string) bool {
+// validatePathParam validates a path parameter value against security rules
+func (r *Router) validatePathParam(paramName, value string) bool {
 	if value == "" {
 		return false
 	}
 
-	if len(value) > r.validationConfig.maxLenght {
+	// Check for length limits
+	if len(value) > r.validationConfig.maxLength || len(value) > r.validationConfig.maxParamLength {
+		Errorf("max parameter length should be %d and single parameter should be %v", r.validationConfig.maxLength, r.validationConfig.maxParamLength)
 		return false
 	}
 
+	// check for dangerous patterns
 	for _, pattern := range r.validationConfig.dangerousPatterns {
 		if strings.Contains(value, pattern) {
 			return false
 		}
 	}
 
+	// check against allowed patterns
+	if !r.validationConfig.allowedPattern.MatchString(value) {
+		return false
+	}
+
+	// Check for custom validation if exists
+	if validator, exists := r.validationConfig.paramValidators[paramName]; !exists {
+		return validator(value)
+	}
+
 	return r.validationConfig.allowedPattern.MatchString(value)
+}
+
+func validateNumeric(value string) bool {
+	return regexp.MustCompile(`^\d+$`).MatchString(value)
+}
+
+func validateUUID(value string) bool {
+	return regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`).MatchString(value)
+}
+
+func validateSlug(value string) bool {
+	return regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`).MatchString(value)
+}
+
+func validateEmail(value string) bool {
+	return regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`).MatchString(value)
 }

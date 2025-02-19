@@ -173,10 +173,17 @@ app.Apply(middleware.RateLimiterMiddleware(rateConfig))
 
 Features:
 
-- Multiple rate limiting strategies (IP-based, Sliding Window)
+- Multiple rate limiting strategies:
+  - IP-based (simple counter)
+  - Sliding Window (smooth transitions)
+  - Token Bucket (controlled bursts)
+  - Leaky Bucket (traffic shaping)
+  - Adaptive (self-tuning limits)
 - Configurable time windows and limits
 - Burst handling
 - Path exclusions
+- Custom key functions
+- Distributed rate limiting support
 
 ### Security Middleware
 
