@@ -17,6 +17,22 @@ type Engine struct {
 	ctx          Context        // - ctx: A default context used for server operations like shutdown.
 }
 
+type Engine2 struct {
+	*RouterGroup                // - RouterGroup: Provides group-based routing and middleware chaining.
+	router       *Router        // - router: The main router instance that handles route registration and dispatching.
+	groups       []*RouterGroup // - groups: A collection of all RouterGroups associated with the engine.
+	addr         string         // - addr: The address where the server is bound (host:port).
+	ctx          Context        // - ctx: A default context used for server operations like shutdown.
+}
+
+type Engine3 struct {
+	*RouterGroup                // - RouterGroup: Provides group-based routing and middleware chaining.
+	router       *Router        // - router: The main router instance that handles route registration and dispatching.
+	groups       []*RouterGroup // - groups: A collection of all RouterGroups associated with the engine.
+	addr         string         // - addr: The address where the server is bound (host:port).
+	ctx          Context        // - ctx: A default context used for server operations like shutdown.
+}
+
 // Route represents an individual HTTP route within the framework.
 type Route struct {
 	Method string // - Method: The HTTP method (e.g., GET, POST) associated with the route.
