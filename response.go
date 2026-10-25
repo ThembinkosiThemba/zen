@@ -1,56 +1,27 @@
 package zen
 
-// This package has neccessay response functions and helpers for structuring response
-// data in api responses
+// M is a shortcut for map[string]any.
+type M map[string]any
 
-// AppCode represents the status code of an application operation.
-type AppCode int
-
-// Constants representing different application status codes.
-// These codes are used to indicate the result or state of an operation.
-const (
-	OK      AppCode = iota // OK represents a successful operation or result.
-	Failure                // Failure represents a failed operation or result.
-)
-
-// Map is a shorthand for map[string]interface{} with additional helper methods
-type M map[string]interface{}
-
-// Response represents a standard data response structure
+// Response is the envelope written by Context.Success and Context.Error.
 type Response struct {
-	Status  int         `json:"status"`
-	Success AppCode     `json:"success"`
-	Data    interface{} `json:"data"`
-	Message string      `json:"message"`
+	Status  int    `json:"status"`
+	Success bool   `json:"success"`
+	Data    any    `json:"data"`
+	Message string `json:"message"`
 }
 
-// Response creates a successful data response
-func (c *Context) Success(status int, data interface{}, message string) {
-	response := Response{
-		Status:  status,
-		Data:    data,
-		Success: OK,
-		Message: message,
-	}
-	c.JSON(status, response)
+// Success writes a successful JSON response envelope.
+func (c *Context) Success(status int, data any, message string) {
+	c.JSON(status, Response{Status: status, Success: true, Data: data, Message: message})
 }
 
-// Error creates an error response
-func (c *Context) Error(status int, message string, details ...interface{}) {
-	var response Response
+// Error writes a failed JSON response envelope. An optional detail value is
+// placed in the data field.
+func (c *Context) Error(status int, message string, details ...any) {
+	response := Response{Status: status, Success: false, Message: message}
 	if len(details) > 0 {
-		response = Response{
-			Status:  status,
-			Success: Failure,
-			Data:    details[0],
-			Message: message,
-		}
-	} else {
-		response = Response{
-			Status:  status,
-			Success: Failure,
-			Message: message,
-		}
+		response.Data = details[0]
 	}
 	c.JSON(status, response)
 }

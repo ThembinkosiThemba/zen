@@ -1,194 +1,123 @@
-// The CORS (Cross-Origin Resource Sharing) middleware for Zen framework provides a
-// flexible way to handle cross-origin requests with customizable configurations.
+// Package middleware provides optional middleware for zen.
 package middleware
 
 import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/ThembinkosiThemba/zen"
 )
 
-// CORSConfig defines the config for CORS middleware
-// It allows fine-grained control over Cross-Origin Resource Sharing behavior.
+// CORSConfig configures the CORS middleware.
 type CORSConfig struct {
-	// AllowOrigins defines the origins that are allowed
-	// Default is ["*"] which allow all origins
+	// AllowOrigins lists the allowed origins. ["*"] allows any origin.
 	AllowOrigins []string
 
-	// AllowMethods defines the methods that are allowed.
-	// Default is [GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS]
+	// AllowMethods lists the methods allowed in preflight requests.
 	AllowMethods []string
 
-	// AllowHeaders defines the headers that can be used when making the actual request.
-	// Default is [] which allows all headers that are requested.
-	// Example: ["Content-Type", "Authorization"]
+	// AllowHeaders lists the request headers allowed in preflight requests.
+	// If empty, the headers requested by the browser are allowed.
 	AllowHeaders []string
 
-	// AllowCredentials indicates whether the response to the request can be exposed
-	// when the credentials flag is true.
-	// Default is false.
-	// WARNING: Setting this to true can lead to security vulnerabilities if AllowOrigins is ["*"].
-	AllowCredentials bool
-
-	// ExposeHeaders defines the headers that are safe to expose to the API of a
-	// CORS API specification.
-	// Default is [].
-	// Example: ["Content-Length", "X-Custom-Header"]
+	// ExposeHeaders lists response headers the browser may expose to scripts.
 	ExposeHeaders []string
 
-	// MaxAge indicates how long the results of a preflight request can be cached
-	// Default is 0 which means no caching.
-	// Example: 3600 (1 hour)
+	// AllowCredentials allows cookies and auth headers on cross-origin requests.
+	// It can not be combined with a wildcard origin.
+	AllowCredentials bool
+
+	// MaxAge is how long, in seconds, browsers may cache a preflight response.
 	MaxAge int
 }
 
-// Cors header constants
-const (
-	AccessControlAllowOrigin      = "Access-Control-Allow-Origin"
-	AccessControlAllowMethods     = "Access-Control-Allow-Methods"
-	AccessControlAllowHeaders     = "Access-Control-Allow-Headers"
-	AccessControlMaxAge           = "Access-Control-Max-Age"
-	AccessControlAllowCredentials = "Access-Control-Allow-Credentials"
-	AccessControlRequestHeaders   = "Access-Control-Request-Headers"
-	AccessControlExposeHeaders    = "Access-Control-Expose-Headers"
-	Vary                          = "Vary"
-)
-
-// DefaultCORSConfig returns the default CORS configuration
+// DefaultCORSConfig returns a permissive config that allows any origin.
 func DefaultCORSConfig() CORSConfig {
-	config := CORSConfig{
+	return CORSConfig{
 		AllowOrigins: []string{"*"},
 		AllowMethods: []string{
-			http.MethodGet,
-			http.MethodPost,
-			http.MethodPut,
-			http.MethodPatch,
-			http.MethodDelete,
-			http.MethodHead,
-			http.MethodOptions,
+			http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch,
+			http.MethodDelete, http.MethodHead, http.MethodOptions,
 		},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
-		AllowCredentials: false,
-		ExposeHeaders:    []string{},
-		MaxAge:           int(12 * time.Hour.Seconds()), // 12 hours
+		AllowHeaders: []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		MaxAge:       12 * 60 * 60,
 	}
-
-	if contains(config.AllowOrigins, "*") {
-		zen.Warn("Using default cors configuration with wildcard origin (*). \nThis may not be secure.")
-	}
-
-	return config
 }
 
-// DefaultCors returns the CORS middleware with default configs
-func DefaultCors() zen.HandlerFunc {
-	// log.Printf("Using default cors configuration with wildcard on origin (*)")
+// CORS returns CORS middleware using DefaultCORSConfig.
+func CORS() zen.HandlerFunc {
 	return CORSWithConfig(DefaultCORSConfig())
 }
 
-// CORSWithConfig returns the CORS middleware with custom config
+// CORSWithConfig returns CORS middleware with the given config. Requests from
+// origins that are not allowed are rejected with 403 Forbidden, and preflight
+// requests are answered with 204 No Content without reaching the route.
+// It panics if AllowCredentials is combined with a wildcard origin.
 func CORSWithConfig(config CORSConfig) zen.HandlerFunc {
-	// normalize and validate the configuration
-	normalizeConfig(&config)
-
-	allowMethods := strings.Join(config.AllowMethods, ",")
-	allowHeaders := strings.Join(config.AllowHeaders, ",")
-	exposeHeaders := strings.Join(config.ExposeHeaders, ",")
-	maxAge := strconv.Itoa(config.MaxAge)
-
-	return func(c *zen.Context) {
-		origin := c.GetHeader("Origin")
-
-		if origin == "" {
-			c.Next()
-			return
-		}
-
-		c.SetHeader(Vary, "Origin")
-
-		allowOrigin := getAllowOrigin(origin, config.AllowOrigins)
-		if allowOrigin == "" {
-			c.Status(http.StatusForbidden)
-			return
-		}
-
-		c.SetHeader(AccessControlAllowOrigin, allowOrigin)
-
-		if config.AllowCredentials {
-			c.SetHeader(AccessControlAllowCredentials, "true")
-		}
-
-		// preflight
-		if c.Request.Method == http.MethodOptions {
-			c.SetHeader(AccessControlAllowMethods, allowMethods)
-
-			requestHeaders := c.GetHeader(AccessControlRequestHeaders)
-			if requestHeaders != "" {
-				if allowHeaders != "" {
-					c.SetHeader(AccessControlAllowHeaders, allowHeaders)
-				} else {
-					c.SetHeader(AccessControlAllowHeaders, requestHeaders)
-				}
-			}
-
-			if config.MaxAge > 0 {
-				c.SetHeader(AccessControlMaxAge, maxAge)
-			}
-
-			c.Status(http.StatusNoContent)
-			return
-
-		}
-
-		if exposeHeaders != "" {
-			c.SetHeader(AccessControlExposeHeaders, exposeHeaders)
-		}
-
-		c.Next()
-	}
-}
-
-// getAllowOrigin determines the appropriate Allow-Origin header value
-func getAllowOrigin(origin string, allowOrigins []string) string {
-	if len(allowOrigins) == 1 && allowOrigins[0] == "*" {
-		return "*"
-	}
-
-	for _, allowOrigin := range allowOrigins {
-		if allowOrigin == origin {
-			return origin
-		}
-	}
-
-	return ""
-}
-
-// normalizeConfig ensures the configuration has valid values
-func normalizeConfig(config *CORSConfig) {
 	if len(config.AllowMethods) == 0 {
 		config.AllowMethods = DefaultCORSConfig().AllowMethods
 	}
 
-	if len(config.AllowOrigins) == 0 {
-		config.AllowOrigins = DefaultCORSConfig().AllowOrigins
-	}
-
-	// Validate AllowCredentials
-	if config.AllowCredentials && contains(config.AllowOrigins, "*") {
-		config.AllowOrigins = DefaultCORSConfig().AllowOrigins
-		config.AllowCredentials = false // for security
-	}
-}
-
-// contains checks if a string slice contains a specific value
-func contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
+	allowAll := len(config.AllowOrigins) == 0
+	origins := make(map[string]struct{}, len(config.AllowOrigins))
+	for _, o := range config.AllowOrigins {
+		if o == "*" {
+			allowAll = true
 		}
+		origins[o] = struct{}{}
 	}
-	return false
+	if allowAll && config.AllowCredentials {
+		panic("zen/middleware: CORS AllowCredentials can not be used with a wildcard origin")
+	}
+
+	allowMethods := strings.Join(config.AllowMethods, ", ")
+	allowHeaders := strings.Join(config.AllowHeaders, ", ")
+	exposeHeaders := strings.Join(config.ExposeHeaders, ", ")
+	maxAge := strconv.Itoa(config.MaxAge)
+
+	return func(c *zen.Context) {
+		header := c.Writer.Header()
+		origin := c.GetHeader("Origin")
+		if !allowAll {
+			header.Add("Vary", "Origin")
+		}
+		if origin == "" {
+			return
+		}
+
+		if _, ok := origins[origin]; !ok && !allowAll {
+			c.QuitWithStatus(http.StatusForbidden)
+			return
+		}
+
+		if allowAll {
+			header.Set("Access-Control-Allow-Origin", "*")
+		} else {
+			header.Set("Access-Control-Allow-Origin", origin)
+		}
+		if config.AllowCredentials {
+			header.Set("Access-Control-Allow-Credentials", "true")
+		}
+
+		isPreflight := c.Request.Method == http.MethodOptions && c.GetHeader("Access-Control-Request-Method") != ""
+		if !isPreflight {
+			if exposeHeaders != "" {
+				header.Set("Access-Control-Expose-Headers", exposeHeaders)
+			}
+			return
+		}
+
+		header.Set("Access-Control-Allow-Methods", allowMethods)
+		if allowHeaders != "" {
+			header.Set("Access-Control-Allow-Headers", allowHeaders)
+		} else if requested := c.GetHeader("Access-Control-Request-Headers"); requested != "" {
+			header.Set("Access-Control-Allow-Headers", requested)
+			header.Add("Vary", "Access-Control-Request-Headers")
+		}
+		if config.MaxAge > 0 {
+			header.Set("Access-Control-Max-Age", maxAge)
+		}
+		c.QuitWithStatus(http.StatusNoContent)
+	}
 }

@@ -3,233 +3,185 @@ package zen
 import (
 	"net/http"
 	"net/http/httptest"
-	"sort"
+	"reflect"
 	"strings"
 	"testing"
 )
 
-func TestNew(t *testing.T) {
-	engine := New()
+func perform(h http.Handler, method, path string, headers ...string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, nil)
+	for i := 0; i+1 < len(headers); i += 2 {
+		req.Header.Set(headers[i], headers[i+1])
+	}
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	return w
+}
 
-	if engine.router == nil {
-		t.Error("Router should be initilized")
-	}
-	if engine.RouterGroup == nil {
-		t.Error("RouterGroup should be initialized")
-	}
-	if len(engine.groups) != 1 {
-		t.Error("Groups should be initialized with root group")
-	}
+func text(body string) HandlerFunc {
+	return func(c *Context) { c.Text(http.StatusOK, "%s", body) }
+}
 
-	if engine.RouterGroup.prefix != "" {
-		t.Error("Root group should have empty prefix")
+func TestRouting(t *testing.T) {
+	app := New()
+	app.GET("/", text("root"))
+	app.GET("/users", text("list"))
+	app.GET("/users/new", text("new"))
+	app.GET("/users/:id", func(c *Context) { c.Text(200, "user %s", c.GetParam("id")) })
+	app.GET("/users/:id/posts/:post", func(c *Context) {
+		c.Text(200, "%s/%s", c.GetParam("id"), c.GetParam("post"))
+	})
+	app.GET("/static/*filepath", func(c *Context) { c.Text(200, "file %s", c.GetParam("filepath")) })
+	app.POST("/users", text("create"))
+
+	tests := []struct {
+		method, path string
+		code         int
+		body         string
+	}{
+		{"GET", "/", 200, "root"},
+		{"GET", "/users", 200, "list"},
+		{"GET", "/users/", 200, "list"},
+		{"GET", "/users/new", 200, "new"}, // static wins over param
+		{"GET", "/users/42", 200, "user 42"},
+		{"GET", "/users/report.pdf", 200, "user report.pdf"},
+		{"GET", "/users/42/posts/7", 200, "42/7"},
+		{"GET", "/users/new/posts/7", 200, "new/7"}, // backtracks from the static branch
+		{"GET", "/static/css/app.css", 200, "file /css/app.css"},
+		{"GET", "/static/", 200, "file /"},
+		{"POST", "/users", 200, "create"},
+		{"GET", "/users/42/posts", 404, "404 NOT FOUND"},
+		{"GET", "/missing", 404, "404 NOT FOUND"},
+		{"DELETE", "/users", 404, "404 NOT FOUND"},
+	}
+	for _, tt := range tests {
+		w := perform(app, tt.method, tt.path)
+		if w.Code != tt.code || w.Body.String() != tt.body {
+			t.Errorf("%s %s = %d %q, want %d %q", tt.method, tt.path, w.Code, w.Body.String(), tt.code, tt.body)
+		}
 	}
 }
 
-func TestEngine_ServeHTTP(t *testing.T) {
-	engine := New()
-
-	tests := []struct {
-		name, method, path, handlerPath string
-		expectedCode                    int
-		expectedBody                    string
-	}{
-		{
-			name:         "Existing route",
-			method:       "GET",
-			path:         "/test",
-			handlerPath:  "/test",
-			expectedCode: http.StatusOK,
-			expectedBody: "success",
-		},
-		{
-			name:         "Non-existent route",
-			method:       "GET",
-			path:         "/notfound",
-			handlerPath:  "/test",
-			expectedCode: http.StatusNotFound,
-			expectedBody: "404 NOT FOUND",
-		},
-		{
-			name:         "Wrong method",
-			method:       "POST",
-			path:         "/test",
-			handlerPath:  "/test",
-			expectedCode: http.StatusNotFound,
-			expectedBody: "404 NOT FOUND",
-		},
+func TestRoutingPanics(t *testing.T) {
+	tests := map[string]func(app *Engine){
+		"duplicate":          func(app *Engine) { app.GET("/a", text("")); app.GET("/a", text("")) },
+		"param name clash":   func(app *Engine) { app.GET("/u/:id", text("")); app.GET("/u/:name/x", text("")) },
+		"catch-all not last": func(app *Engine) { app.GET("/a/*rest/b", text("")) },
+		"unnamed param":      func(app *Engine) { app.GET("/a/:", text("")) },
+		"no handlers":        func(app *Engine) { app.GET("/a") },
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Register test handler
-			engine.GET(tt.handlerPath, func(c *Context) {
-				c.Text(http.StatusOK, "success")
-			})
-
-			w := httptest.NewRecorder()
-			req := httptest.NewRequest(tt.method, tt.path, nil)
-			engine.ServeHTTP(w, req)
-
-			if w.Code != tt.expectedCode {
-				t.Errorf("Expected status code %d, got %d", tt.expectedCode, w.Code)
-			}
-
-			if body := strings.TrimSpace(w.Body.String()); body != tt.expectedBody {
-				t.Errorf("Expected body %q, got %q", tt.expectedBody, body)
-			}
+	for name, register := range tests {
+		t.Run(name, func(t *testing.T) {
+			defer func() {
+				if recover() == nil {
+					t.Error("expected panic")
+				}
+			}()
+			register(New())
 		})
 	}
 }
 
-func TestEngine_Use(t *testing.T) {
-	engine := New()
-	middlewareOrder := []string{}
-
-	engine.Apply(func(c *Context) {
-		middlewareOrder = append(middlewareOrder, "global1")
-		c.Next()
-	})
-	engine.Apply(func(c *Context) {
-		middlewareOrder = append(middlewareOrder, "global2")
-		c.Next()
-	})
-
-	engine.GET("/test", func(c *Context) {
-		middlewareOrder = append(middlewareOrder, "handler")
-	})
-
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/test", nil)
-	engine.ServeHTTP(w, req)
-
-	expected := []string{"global1", "global2", "handler"}
-	if len(middlewareOrder) != len(expected) {
-		t.Errorf("Expected %d middleware calls, got %d", len(expected), len(middlewareOrder))
+func TestMiddlewareOrder(t *testing.T) {
+	var order []string
+	mw := func(name string) HandlerFunc {
+		return func(c *Context) {
+			order = append(order, name)
+			c.Next()
+			order = append(order, "/"+name)
+		}
 	}
 
-	for i, v := range expected {
-		if i >= len(middlewareOrder) || middlewareOrder[i] != v {
-			t.Errorf("Expected middleware order %v, got %v", expected, middlewareOrder)
-			break
+	app := New()
+	app.Apply(mw("global"))
+	api := app.Group("/api", mw("api"))
+	v1 := api.Group("/v1")
+	v1.Apply(mw("v1"))
+	v1.GET("/x", mw("route"), func(c *Context) { order = append(order, "handler") })
+
+	perform(app, "GET", "/api/v1/x")
+	want := []string{"global", "api", "v1", "route", "handler", "/route", "/v1", "/api", "/global"}
+	if !reflect.DeepEqual(order, want) {
+		t.Errorf("order = %v, want %v", order, want)
+	}
+}
+
+func TestGroupsDoNotShareMiddleware(t *testing.T) {
+	app := New()
+	api := app.Group("/api")
+	a := api.Group("/a")
+	b := api.Group("/b")
+	a.Apply(func(c *Context) { c.SetHeader("X-Group", "a") })
+	b.Apply(func(c *Context) { c.SetHeader("X-Group", "b") })
+	a.GET("/x", text("a"))
+	b.GET("/x", text("b"))
+
+	if got := perform(app, "GET", "/api/a/x").Header().Get("X-Group"); got != "a" {
+		t.Errorf("group a header = %q", got)
+	}
+	if got := perform(app, "GET", "/api/b/x").Header().Get("X-Group"); got != "b" {
+		t.Errorf("group b header = %q", got)
+	}
+}
+
+func TestNotFoundRunsGlobalMiddleware(t *testing.T) {
+	app := New()
+	app.Apply(func(c *Context) { c.SetHeader("X-Global", "1") })
+
+	w := perform(app, "GET", "/missing")
+	if w.Code != 404 || w.Header().Get("X-Global") != "1" {
+		t.Errorf("got %d, X-Global=%q", w.Code, w.Header().Get("X-Global"))
+	}
+
+	app.NoRoute(func(c *Context) { c.JSON(404, M{"error": "not found"}) })
+	w = perform(app, "GET", "/missing")
+	if w.Body.String() != `{"error":"not found"}` || w.Header().Get("X-Global") != "1" {
+		t.Errorf("custom NoRoute: %q, X-Global=%q", w.Body.String(), w.Header().Get("X-Global"))
+	}
+}
+
+func TestQuitStopsChain(t *testing.T) {
+	app := New()
+	app.Apply(func(c *Context) { c.QuitWithStatus(http.StatusForbidden) })
+	app.GET("/", func(c *Context) { t.Error("handler should not run") })
+
+	if w := perform(app, "GET", "/"); w.Code != http.StatusForbidden || w.Body.Len() != 0 {
+		t.Errorf("got %d %q", w.Code, w.Body.String())
+	}
+}
+
+func TestRoutes(t *testing.T) {
+	app := New()
+	app.GET("/a", text(""))
+	app.Group("/api").POST("/b/:id", text(""))
+
+	want := []Route{{"GET", "/a"}, {"POST", "/api/b/:id"}}
+	if got := app.Routes(); !reflect.DeepEqual(got, want) {
+		t.Errorf("Routes() = %v, want %v", got, want)
+	}
+}
+
+func TestJoinPaths(t *testing.T) {
+	tests := [][3]string{
+		{"/", "/users", "/users"},
+		{"/", "", "/"},
+		{"/api", "/", "/api"},
+		{"/api/", "users/", "/api/users"},
+		{"/", "api", "/api"},
+	}
+	for _, tt := range tests {
+		if got := joinPaths(tt[0], tt[1]); got != tt[2] {
+			t.Errorf("joinPaths(%q, %q) = %q, want %q", tt[0], tt[1], got, tt[2])
 		}
 	}
 }
 
-func TestEngine_Routes(t *testing.T) {
-	engine := New()
-
-	// Register various routes
-	routes := []Route{
-		{"GET", "/users"},
-		{"POST", "/users"},
-		{"GET", "/posts"},
-		{"DELETE", "/posts/:id"},
+func TestSetTrustedProxies(t *testing.T) {
+	app := New()
+	if err := app.SetTrustedProxies("10.0.0.0/8", "192.168.1.1", "::1"); err != nil {
+		t.Fatal(err)
 	}
-
-	for _, r := range routes {
-		switch r.Method {
-		case "GET":
-			engine.GET(r.Path, func(c *Context) {})
-		case "POST":
-			engine.POST(r.Path, func(c *Context) {})
-		case "DELETE":
-			engine.DELETE(r.Path, func(c *Context) {})
-		}
-	}
-
-	// Get registered routes
-	registeredRoutes := engine.Routes()
-
-	if len(registeredRoutes) != len(routes) {
-		t.Errorf("Expected %d routes, got %d", len(routes), len(registeredRoutes))
-	}
-
-	// Sort both slices for comparison
-	sort.Slice(routes, func(i, j int) bool {
-		if routes[i].Method != routes[j].Method {
-			return routes[i].Method < routes[j].Method
-		}
-		return routes[i].Path < routes[j].Path
-	})
-
-	sort.Slice(registeredRoutes, func(i, j int) bool {
-		if registeredRoutes[i].Method != registeredRoutes[j].Method {
-			return registeredRoutes[i].Method < registeredRoutes[j].Method
-		}
-		return registeredRoutes[i].Path < registeredRoutes[j].Path
-	})
-
-	// Compare routes
-	for i, route := range routes {
-		if registeredRoutes[i].Method != route.Method || registeredRoutes[i].Path != route.Path {
-			t.Errorf("Route mismatch at index %d: expected %v, got %v",
-				i, route, registeredRoutes[i])
-		}
-	}
-}
-
-func TestEngine_GroupRoutes(t *testing.T) {
-	engine := New()
-
-	// Create groups with different prefixes
-	apiV1 := engine.GroupRoutes("/api/v1")
-	apiV2 := engine.GroupRoutes("/api/v2")
-
-	// Add routes to groups
-	apiV1.GET("/users", func(c *Context) {})
-	apiV2.GET("/users", func(c *Context) {})
-
-	routes := engine.Routes()
-
-	expectedPaths := map[string]bool{
-		"/api/v1/users": false,
-		"/api/v2/users": false,
-	}
-
-	if len(routes) != len(expectedPaths) {
-		t.Errorf("Expected %d routes, got %d", len(expectedPaths), len(routes))
-	}
-
-	for _, route := range routes {
-		if route.Method != "GET" {
-			t.Errorf("Unexpected method: %s", route.Method)
-		}
-		if _, exists := expectedPaths[route.Path]; !exists {
-			t.Errorf("Unexpected path: %s", route.Path)
-		}
-		expectedPaths[route.Path] = true
-	}
-
-	// Verify all expected paths were found
-	for path, found := range expectedPaths {
-		if !found {
-			t.Errorf("Expected path not found: %s", path)
-		}
-	}
-}
-
-func TestEngine_NestedGroups(t *testing.T) {
-	engine := New()
-
-	// Create nested groups
-	api := engine.GroupRoutes("/api")
-	v1 := api.GroupRoutes("/v1")
-	users := v1.GroupRoutes("/users")
-
-	handlerCalled := false
-	users.GET("/:id", func(c *Context) {
-		handlerCalled = true
-		if id := c.GetParam("id"); id != "123" {
-			t.Errorf("Expected id parameter '123', got '%s'", id)
-		}
-	})
-
-	// Test the nested route
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/api/v1/users/123", nil)
-	engine.ServeHTTP(w, req)
-
-	if !handlerCalled {
-		t.Error("Handler was not called")
+	if err := app.SetTrustedProxies("not-an-ip"); err == nil || !strings.Contains(err.Error(), "not-an-ip") {
+		t.Errorf("expected error for invalid proxy, got %v", err)
 	}
 }

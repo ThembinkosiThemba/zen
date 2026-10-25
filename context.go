@@ -1,12 +1,16 @@
 package zen
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
+	"slices"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -15,295 +19,206 @@ var (
 	ErrBadJSON   = errors.New("invalid JSON format")
 )
 
-// Context holds the request and response data
+// Context carries the request and response through the handler chain.
+// It implements context.Context, so it can be passed to code that expects one.
 type Context struct {
-	Writer   *ResponseWriter
-	Request  *http.Request
-	Params   map[string]string // URL parameters
-	Handlers []HandlerFunc     // Slice of middleware functions
-	Index    int               // Current position in the middleware chain
-	Ctx      context.Context
+	Writer  *ResponseWriter
+	Request *http.Request
+
+	engine   *Engine
+	handlers []HandlerFunc
+	index    int
+	params   []param
+
+	mu   sync.RWMutex
+	keys map[any]any
 }
 
-// newContext creates a new Context instance
-func NewContext(w http.ResponseWriter, req *http.Request) *Context {
-	return &Context{
-		Writer:  NewResponseWriter(w),
-		Request: req,
-		Index:   -1,
-		Params:  make(map[string]string),
-		Ctx:     req.Context(),
-	}
-}
-
-// Next executes the next handler in the chain
+// Next runs the remaining handlers in the chain. Middleware calls it to
+// run code after the downstream handlers have finished.
 func (c *Context) Next() {
-	c.Index++                       // move to the next handler
-	for c.Index < len(c.Handlers) { // continue while there are handles left
-		c.Handlers[c.Index](c) // execute current handler
-		c.Index++              // move to the next one
+	c.index++
+	for c.index < len(c.handlers) {
+		c.handlers[c.index](c)
+		c.index++
 	}
 }
 
-// Quit stops the middleware chain execution
+// Quit stops the remaining handlers in the chain from running.
+// It does not stop the current handler.
 func (c *Context) Quit() {
-	c.Index = len(c.Handlers)
+	c.index = len(c.handlers)
 }
 
-// QuitWithStatus stops the middleware chain execution and writes the status code
+// QuitWithStatus stops the chain and sets the response status code.
 func (c *Context) QuitWithStatus(code int) {
-	c.Writer.WriteHeader(code)
-	c.SetHeader("X-Content-Type-Options", "nosniff")
+	c.Status(code)
 	c.Quit()
 }
 
-// Deadline returns the time when work done on behalf of this context should be canceled.
-// The deadline is represented as a time.Time value. ok will be false when no deadline is set.
-//
-// Usage:
-//
-//	deadline, ok := c.Deadline()
-//	if ok {
-//	    fmt.Printf("Work must be completed by: %v\n", deadline)
-//	} else {
-//	    fmt.Println("No deadline set")
-//	}
-func (c *Context) Deadline() (deadline time.Time, ok bool) {
-	return c.Ctx.Deadline()
+// IsQuit reports whether the chain was stopped.
+func (c *Context) IsQuit() bool {
+	return c.index >= len(c.handlers)
 }
 
-// Done returns a channel that's closed when work done on behalf of this context
-// should be canceled. If this context can never be canceled, Done may return nil.
-//
-// Usage:
-//
-//	select {
-//	case <-c.Done():
-//	    fmt.Println("Context canceled, stopping work")
-//	    return
-//	case <-time.After(5 * time.Second):
-//	    fmt.Println("Work completed")
-//	}
-func (c *Context) Done() <-chan struct{} {
-	return c.Ctx.Done()
-}
-
-// Err returns nil if Done is not yet closed, or a non-nil error explaining why
-// the context was canceled if Done is closed.
-//
-// Usage:
-//
-//	if err := c.Err(); err != nil {
-//	    fmt.Printf("Context error: %v\n", err)
-//	    return
-//	}
-func (c *Context) Err() error {
-	return c.Ctx.Err()
-}
-
-// Value returns the value associated with this context for a given key, or nil
-// if no value is associated with key. Successive calls to Value with the same key
-// returns the same result.
-//
-// Usage:
-//
-//	userID := c.Value("userID")
-//	if id, ok := userID.(string); ok {
-//	    fmt.Printf("Current user: %s\n", id)
-//	}
-func (c *Context) Value(key interface{}) interface{} {
-	return c.Ctx.Value(key)
-}
-
-// WithValue returns a copy of context with the provided key-value pair.
-// The provided key must be comparable and should not be string or any other
-// built-in type to avoid collisions.
-//
-// Usage:
-//
-//	type contextKey string
-//	userKey := contextKey("userID")
-//	newCtx := c.WithValue(userKey, "12345")
-func (c *Context) WithValue(key, val interface{}) *Context {
-	newCtx := *c
-	newCtx.Ctx = context.WithValue(c.Ctx, key, val)
-	return &newCtx
-}
-
-// JSON sends a JSON response to the client
-func (c *Context) JSON(code int, obj interface{}) {
-	c.SetContentType("application/json")
-	c.Writer.WriteHeader(code)
-	encoder := json.NewEncoder(c.Writer)
-	if err := encoder.Encode(obj); err != nil {
-		http.Error(c.Writer, err.Error(), 500)
+// Set stores a value on the context for the lifetime of the request.
+func (c *Context) Set(key, value any) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.keys == nil {
+		c.keys = make(map[any]any)
 	}
+	c.keys[key] = value
 }
 
-// Text sends a text response
-func (c *Context) Text(code int, format string, values ...interface{}) {
-	c.SetContentType("text/plain")
-	c.Writer.WriteHeader(code)
-	if len(values) > 0 {
-		format = fmt.Sprintf(format, values...)
+// Get returns a value stored with Set.
+func (c *Context) Get(key any) (value any, ok bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	value, ok = c.keys[key]
+	return value, ok
+}
+
+// Deadline implements context.Context using the request's context.
+func (c *Context) Deadline() (time.Time, bool) { return c.Request.Context().Deadline() }
+
+// Done implements context.Context using the request's context.
+func (c *Context) Done() <-chan struct{} { return c.Request.Context().Done() }
+
+// Err implements context.Context using the request's context.
+func (c *Context) Err() error { return c.Request.Context().Err() }
+
+// Value implements context.Context. It returns values stored with Set first,
+// then falls back to the request's context.
+func (c *Context) Value(key any) any {
+	if value, ok := c.Get(key); ok {
+		return value
 	}
-	c.Writer.Write([]byte(format))
+	return c.Request.Context().Value(key)
 }
 
-// Status sets the HTTP response status code
-func (c *Context) Status(code int) {
-	c.Writer.WriteHeader(code)
-}
-
-// GetClientIP returns the client IP address
-func (c *Context) GetClientIP() string {
-	// First, we need to check X-Real-IP header
-	ip := c.GetHeader("X-Real-IP")
-	if ip != "" {
-		return ip
-	}
-
-	// check X-Forwarded-For header
-	ip = c.GetHeader("X-Forwarded-For")
-	if ip != "" {
-		return ip
-	}
-
-	// Get the ip for RemoteAddr
-	return c.Request.RemoteAddr
-}
-
-// ParseJSON parses request body into the provided struct
-func (c *Context) ParseJSON(obj interface{}) error {
-	if c.Request.Body == nil {
-		return ErrEmptyBody
-	}
-
-	body, err := io.ReadAll(c.Request.Body)
-	defer c.Request.Body.Close()
-	if err != nil {
-		return err
-	}
-
-	if len(body) == 0 {
-		return ErrEmptyBody
-	}
-
-	if err := json.Unmarshal(body, obj); err != nil {
-		return ErrBadJSON
-	}
-
-	return nil
-}
-
-// TryParseJSON binds the JSON body and returns a boolean indicating success
-func (c *Context) TryParseJSON(obj interface{}) bool {
-	return c.ParseJSON(obj) == nil
-}
-
-// ParseJSONWithError binds JSON and writes an error response if binding fails
-func (c *Context) ParseJSONWithError(obj interface{}) bool {
-	if err := c.ParseJSON(obj); err != nil {
-		c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"error": err.Error(),
-		})
-		return false
-	}
-	return true
-}
-
-// SetHeader sets a header in the response
-func (c *Context) SetHeader(key, value string) {
-	c.Writer.Header().Set(key, value)
-}
-
-// GetHeader returns the value of a header from the request
-func (c *Context) GetHeader(key string) string {
-	return c.Request.Header.Get(key)
-}
-
-// GetPath returns the URL path
-func (c *Context) GetURLPath() string {
-	return c.Request.URL.Path
-}
-
-// GetHost returns the host address
-func (c *Context) GetHost() string {
-	return c.Request.URL.Host
-}
-
-// GetRawQuery returns encoded query values, without '?'
-func (c *Context) GetRawQuery() string {
-	return c.Request.URL.RawQuery
-}
-
-// GetMethod returns the HTTP method (GET, POST, PUT, etc.).
-// For client requests, an empty string means GET.
-func (c *Context) GetMethod() string {
-	return c.Request.Method
-}
-
-// SetQueryParam adds a query parameter to the request URL
-func (c *Context) SetQueryParam(key, value string) {
-	query := c.Request.URL.Query()
-	query.Set(key, value)
-	c.Request.URL.RawQuery = query.Encode()
-}
-
-// GetParam returns the value of a URL path parameter defined in the route.
-// It retrieves parameters that are part of the URL path defined with ":" prefix.
+// GetParam returns the value of a URL path parameter.
 //
-// Usage:
-//
-//	// For route: "/users/:id/posts/:postId"
-//	// URL: "/users/123/posts/456"
-//	router.GET("/users/:id/posts/:postId", func(c *Context) {
-//	    userID := c.GetParam("id")     // Returns "123"
-//	    postID := c.GetParam("postId") // Returns "456"
+//	app.GET("/users/:id", func(c *zen.Context) {
+//	    id := c.GetParam("id")
 //	})
 func (c *Context) GetParam(key string) string {
-	return c.Params[key]
+	for _, p := range c.params {
+		if p.Key == key {
+			return p.Value
+		}
+	}
+	return ""
 }
 
-// GetQueryParam returns the value of a URL query parameter.
-// It retrieves parameters that come after the '?' in the URL.
-//
-// Usage:
-//
-//	// For URL: http://example.com/search?query=golang&page=1
-//	query := c.GetQueryParam("query")    // Returns "golang"
-//	page := c.GetQueryParam("page")      // Returns "1"
-//	missing := c.GetQueryParam("absent") // Returns ""
+// GetQueryParam returns the first value of a URL query parameter.
 func (c *Context) GetQueryParam(key string) string {
 	return c.Request.URL.Query().Get(key)
 }
 
-// GetQueryParams returns all query parameters as a map
-func (c *Context) GetQueryParams() map[string][]string {
-	return c.Request.URL.Query()
+// GetHeader returns a request header.
+func (c *Context) GetHeader(key string) string {
+	return c.Request.Header.Get(key)
 }
 
-// SetContentType sets the Content-Type header
-func (c *Context) SetContentType(contentType string) {
-	c.SetHeader("Content-Type", contentType)
+// SetHeader sets a response header.
+func (c *Context) SetHeader(key, value string) {
+	c.Writer.Header().Set(key, value)
 }
 
-// GetContentType returns the Content-Type header
-func (c *Context) GetContentType() string {
-	return c.GetHeader("Content-Type")
-}
-
-// SetCookie sets a cookie in the response
-func (c *Context) SetCookie(cookie *http.Cookie) {
-	http.SetCookie(c.Writer, cookie)
-}
-
-// GetCookie returns the value of a cookie from the request
+// GetCookie returns the named request cookie.
 func (c *Context) GetCookie(name string) (*http.Cookie, error) {
 	return c.Request.Cookie(name)
 }
 
-// DefaultContext returns custom context with 10 seconds timeout
-func (c *Context) DefaultContext() (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.Background(), 10*time.Second)
+// SetCookie adds a Set-Cookie header to the response.
+func (c *Context) SetCookie(cookie *http.Cookie) {
+	http.SetCookie(c.Writer, cookie)
+}
+
+// GetClientIP returns the client's IP address. Forwarding headers
+// (X-Forwarded-For, X-Real-IP) are only used when the request comes from a
+// proxy configured with Engine.SetTrustedProxies, since any client can set them.
+func (c *Context) GetClientIP() string {
+	remote := c.Request.RemoteAddr
+	if host, _, err := net.SplitHostPort(remote); err == nil {
+		remote = host
+	}
+
+	addr, err := netip.ParseAddr(remote)
+	if err != nil || c.engine == nil || !c.engine.isTrustedProxy(addr) {
+		return remote
+	}
+
+	// Walk X-Forwarded-For from the right, skipping our own proxies.
+	if xff := c.GetHeader("X-Forwarded-For"); xff != "" {
+		for i, hop := range slices.Backward(strings.Split(xff, ",")) {
+			hopAddr, err := netip.ParseAddr(strings.TrimSpace(hop))
+			if err != nil {
+				break
+			}
+			if i == 0 || !c.engine.isTrustedProxy(hopAddr) {
+				return hopAddr.String()
+			}
+		}
+	}
+	if realIP, err := netip.ParseAddr(strings.TrimSpace(c.GetHeader("X-Real-IP"))); err == nil {
+		return realIP.String()
+	}
+	return remote
+}
+
+// Status sets the response status code.
+func (c *Context) Status(code int) {
+	c.Writer.WriteHeader(code)
+}
+
+// JSON writes obj as a JSON response.
+func (c *Context) JSON(code int, obj any) {
+	data, err := json.Marshal(obj)
+	if err != nil {
+		http.Error(c.Writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	c.SetHeader("Content-Type", "application/json")
+	c.Status(code)
+	c.Writer.Write(data)
+}
+
+// Text writes a plain text response. If values are given, format is
+// passed to fmt.Sprintf.
+func (c *Context) Text(code int, format string, values ...any) {
+	c.SetHeader("Content-Type", "text/plain; charset=utf-8")
+	c.Status(code)
+	if len(values) > 0 {
+		fmt.Fprintf(c.Writer, format, values...)
+		return
+	}
+	io.WriteString(c.Writer, format)
+}
+
+// ParseJSON decodes the JSON request body into obj. It returns ErrEmptyBody
+// if there is no body, and an error wrapping ErrBadJSON if decoding fails.
+func (c *Context) ParseJSON(obj any) error {
+	if c.Request.Body == nil || c.Request.Body == http.NoBody {
+		return ErrEmptyBody
+	}
+	if err := json.NewDecoder(c.Request.Body).Decode(obj); err != nil {
+		if errors.Is(err, io.EOF) {
+			return ErrEmptyBody
+		}
+		return fmt.Errorf("%w: %v", ErrBadJSON, err)
+	}
+	return nil
+}
+
+// ParseJSONWithError is like ParseJSON, but on failure it responds with
+// 400 Bad Request, stops the chain, and returns false.
+func (c *Context) ParseJSONWithError(obj any) bool {
+	if err := c.ParseJSON(obj); err != nil {
+		c.JSON(http.StatusBadRequest, M{"error": err.Error()})
+		c.Quit()
+		return false
+	}
+	return true
 }
