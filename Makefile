@@ -1,23 +1,19 @@
-BINARY_NAME=github.com/ThembinkosiThemba/zen
-SOURCES=$(wildcard *.go)
-
-build:
-	go build -o $(BINARY_NAME)
-
-tidy:
-	go mod tidy
-
-run:
-	go run docs/usage/main.go
-	
-swagger:
-	cd cmd && swag init
+.PHONY: test race bench vet fmt run
 
 test:
-	go test -list .
+	go test ./...
 
-clean:
-	rm -f $(BINARY_NAME)
+race:
+	go test -race ./...
 
-# Define phony targets (these don't represent files)
-.PHONY: all build run test clean
+bench:
+	go test -run xxx -bench . -benchmem .
+
+vet:
+	go vet ./...
+
+fmt:
+	gofmt -w .
+
+run:
+	go run ./examples/basic

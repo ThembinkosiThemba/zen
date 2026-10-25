@@ -1,42 +1,76 @@
 package zen
 
-import "net/http"
+import (
+	"bufio"
+	"errors"
+	"net"
+	"net/http"
+)
 
-// ResponseWriter wraps the http.ResponseWriter to capture and manage the HTTP status code
-// along with ensuring the status code is written only once during the request-response cycle.
+// ResponseWriter wraps http.ResponseWriter and records the status code and
+// body size. The status line is sent lazily, on the first Write or when the
+// handler chain finishes, so middleware can still set headers after a handler
+// has chosen a status code.
 type ResponseWriter struct {
-	http.ResponseWriter      // The embedded ResponseWriter used for writing the response.
-	StatusCode          int  // Captures the HTTP status code set for the response.
-	headerWritten       bool // A flag to indicate if the header has already been written.
+	http.ResponseWriter
+	status int
+	size   int
 }
 
-// WriteHeader captures the status code and calls the underlying ResponseWriter's WriteHeader method.
-// It ensures that the status code is written only once and prevents overwriting.
-func (w *ResponseWriter) WriteHeader(statusCode int) {
-	// Prevents writing the header more than once.
-	if w.headerWritten {
-		return
-	}
-	w.StatusCode = statusCode                // Set the status code for the response.
-	w.ResponseWriter.WriteHeader(statusCode) // Calls the underlying ResponseWriter's WriteHeader.
-	w.headerWritten = true                   // Marks the header as written to prevent further writes.
+func newResponseWriter(w http.ResponseWriter) *ResponseWriter {
+	return &ResponseWriter{ResponseWriter: w, status: http.StatusOK, size: -1}
 }
 
-// Status returns the current HTTP status code. If no status code is set, it returns http.StatusOK.
-func (w *ResponseWriter) Status() int {
-	// If no status code has been set, return HTTP Status OK (200).
-	if w.StatusCode == 0 {
-		return http.StatusOK
+// WriteHeader sets the status code. It has no effect once the headers are sent.
+func (w *ResponseWriter) WriteHeader(code int) {
+	if code > 0 && !w.Written() {
+		w.status = code
 	}
-	return w.StatusCode
 }
 
-// NewResponseWriter creates and returns a new ResponseWriter instance.
-// It wraps the provided http.ResponseWriter and initializes the StatusCode to 0 and headerWritten flag to false.
-func NewResponseWriter(w http.ResponseWriter) *ResponseWriter {
-	return &ResponseWriter{
-		ResponseWriter: w,     // The original ResponseWriter that will be wrapped.
-		StatusCode:     0,     // Default status code (0 means not yet set).
-		headerWritten:  false, // Flag to track if the header has been written.
+func (w *ResponseWriter) writeHeaderNow() {
+	if !w.Written() {
+		w.size = 0
+		w.ResponseWriter.WriteHeader(w.status)
 	}
 }
+
+// Write sends the headers if needed and writes data to the body.
+func (w *ResponseWriter) Write(data []byte) (int, error) {
+	w.writeHeaderNow()
+	n, err := w.ResponseWriter.Write(data)
+	w.size += n
+	return n, err
+}
+
+// Status returns the response status code.
+func (w *ResponseWriter) Status() int { return w.status }
+
+// Size returns the number of body bytes written, or -1 if headers have not been sent.
+func (w *ResponseWriter) Size() int { return w.size }
+
+// Written reports whether the headers have been sent.
+func (w *ResponseWriter) Written() bool { return w.size != -1 }
+
+// Flush implements http.Flusher.
+func (w *ResponseWriter) Flush() {
+	w.writeHeaderNow()
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Hijack implements http.Hijacker, which WebSocket libraries need.
+func (w *ResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, errors.New("zen: underlying ResponseWriter does not implement http.Hijacker")
+	}
+	if w.size < 0 {
+		w.size = 0
+	}
+	return h.Hijack()
+}
+
+// Unwrap returns the underlying http.ResponseWriter, for http.ResponseController.
+func (w *ResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }

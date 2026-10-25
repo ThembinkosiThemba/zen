@@ -1,372 +1,220 @@
 package zen
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
-func TestNewContext(t *testing.T) {
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/test", nil)
-	c := NewContext(w, req)
+func TestJSON(t *testing.T) {
+	app := New()
+	app.GET("/", func(c *Context) { c.JSON(http.StatusCreated, M{"name": "zen"}) })
+	app.GET("/bad", func(c *Context) { c.JSON(http.StatusOK, make(chan int)) })
 
-	if c.Writer == nil {
-		t.Error("Writer should not be nil")
+	w := perform(app, "GET", "/")
+	if w.Code != http.StatusCreated || w.Body.String() != `{"name":"zen"}` {
+		t.Errorf("got %d %q", w.Code, w.Body.String())
 	}
-	if c.Request != req {
-		t.Error("Request not properly set")
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q", ct)
 	}
-	if c.Index != -1 {
-		t.Error("Index should be initialized to -1")
-	}
-	if len(c.Params) != 0 {
-		t.Error("Params should be initialized empty")
+
+	if w := perform(app, "GET", "/bad"); w.Code != http.StatusInternalServerError {
+		t.Errorf("unencodable value: got %d", w.Code)
 	}
 }
 
-func TestContext_Next(t *testing.T) {
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/test", nil)
-	c := NewContext(w, req)
+func TestText(t *testing.T) {
+	app := New()
+	app.GET("/fmt", func(c *Context) { c.Text(200, "Hello %s", "World") })
 
-	order := []string{}
-	handler1 := func(c *Context) {
-		order = append(order, "1")
-	}
-	handler2 := func(c *Context) {
-		order = append(order, "2")
-	}
-	handler3 := func(c *Context) {
-		order = append(order, "3")
-	}
-
-	c.Handlers = []HandlerFunc{handler1, handler2, handler3}
-	c.Next()
-
-	if len(order) != 3 {
-		t.Error("All handlers should be executed")
-	}
-	if strings.Join(order, "") != "123" {
-		t.Error("Handlers executed in wrong order")
+	if w := perform(app, "GET", "/fmt"); w.Body.String() != "Hello World" {
+		t.Errorf("body = %q", w.Body.String())
 	}
 }
 
-func TestContext_JSON(t *testing.T) {
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/test", nil)
-	c := NewContext(w, req)
+func TestResponseEnvelope(t *testing.T) {
+	app := New()
+	app.GET("/ok", func(c *Context) { c.Success(200, M{"id": 1}, "done") })
+	app.GET("/err", func(c *Context) { c.Error(400, "bad input", "name is required") })
 
-	type testStruct struct {
+	if got := perform(app, "GET", "/ok").Body.String(); got != `{"status":200,"success":true,"data":{"id":1},"message":"done"}` {
+		t.Errorf("Success body = %s", got)
+	}
+	if got := perform(app, "GET", "/err").Body.String(); got != `{"status":400,"success":false,"data":"name is required","message":"bad input"}` {
+		t.Errorf("Error body = %s", got)
+	}
+}
+
+func TestStatusIsSentWithoutBody(t *testing.T) {
+	app := New()
+	app.GET("/", func(c *Context) { c.Status(http.StatusAccepted) })
+	if w := perform(app, "GET", "/"); w.Code != http.StatusAccepted {
+		t.Errorf("got %d", w.Code)
+	}
+}
+
+func TestHeadersSetAfterStatusAreSent(t *testing.T) {
+	app := New()
+	app.Apply(func(c *Context) {
+		c.Next()
+		c.SetHeader("X-After", "1")
+	})
+	app.GET("/", func(c *Context) { c.Status(http.StatusNoContent) })
+
+	w := perform(app, "GET", "/")
+	if w.Code != http.StatusNoContent || w.Result().Header.Get("X-After") != "1" {
+		t.Errorf("got %d, X-After=%q", w.Code, w.Result().Header.Get("X-After"))
+	}
+}
+
+func TestParseJSON(t *testing.T) {
+	type payload struct {
 		Name string `json:"name"`
-		Age  int    `json:"age"`
 	}
-
-	testData := testStruct{
-		Name: "test",
-		Age:  25,
-	}
-
-	c.JSON(http.StatusOK, testData)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
-	}
-
-	if w.Header().Get("Content-Type") != "application/json" {
-		t.Error("Content-Type header should be application/json")
-	}
-
-	var result testStruct
-	err := json.NewDecoder(w.Body).Decode(&result)
-	if err != nil {
-		t.Errorf("Failed to decode response: %v", err)
-	}
-
-	if result.Name != testData.Name || result.Age != testData.Age {
-		t.Error("Response data doesn't match input data")
-	}
-}
-
-func TestContext_Text(t *testing.T) {
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/test", nil)
-	c := NewContext(w, req)
-
-	c.Text(http.StatusOK, "Hello %s", "World")
-
-	if w.Code != http.StatusOK {
-		t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
-	}
-
-	if w.Header().Get("Content-Type") != "text/plain" {
-		t.Error("Content-Type header should be text/plain")
-	}
-
-	expected := "Hello World"
-	if got := w.Body.String(); got != expected {
-		t.Errorf("Expected body %q, got %q", expected, got)
-	}
-}
-func TestContext_BindJSON(t *testing.T) {
 	tests := []struct {
-		name    string
 		body    string
 		wantErr error
 	}{
-		{
-			name:    "Valid JSON",
-			body:    `{"name":"test","age":25}`,
-			wantErr: nil,
-		},
-		{
-			name:    "Invalid JSON",
-			body:    `{"name":"test"`,
-			wantErr: ErrBadJSON,
-		},
-		{
-			name:    "Empty body",
-			body:    "",
-			wantErr: ErrEmptyBody,
-		},
+		{`{"name":"zen"}`, nil},
+		{`{"name":"zen"`, ErrBadJSON},
+		{`{"name":1}`, ErrBadJSON},
+		{``, ErrEmptyBody},
 	}
-
-	type testStruct struct {
-		Name string `json:"name"`
-		Age  int    `json:"age"`
-	}
-
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("POST", "/test", bytes.NewBufferString(tt.body))
-			c := NewContext(httptest.NewRecorder(), req)
-
-			var result testStruct
-			err := c.ParseJSON(&result)
-
-			if err != tt.wantErr {
-				t.Errorf("BindJSON() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
+		req := httptest.NewRequest("POST", "/", strings.NewReader(tt.body))
+		c := &Context{Request: req}
+		var p payload
+		if err := c.ParseJSON(&p); !errors.Is(err, tt.wantErr) {
+			t.Errorf("ParseJSON(%q) error = %v, want %v", tt.body, err, tt.wantErr)
+		}
 	}
 }
 
-func TestContext_ClientIP(t *testing.T) {
+func TestParseJSONWithError(t *testing.T) {
+	app := New()
+	app.POST("/", func(c *Context) {
+		var v map[string]any
+		if !c.ParseJSONWithError(&v) {
+			return
+		}
+		c.Text(200, "ok")
+	})
+
+	req := httptest.NewRequest("POST", "/", strings.NewReader("{"))
+	w := httptest.NewRecorder()
+	app.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "invalid JSON") {
+		t.Errorf("got %d %q", w.Code, w.Body.String())
+	}
+}
+
+func TestGetClientIP(t *testing.T) {
+	app := New()
+	if err := app.SetTrustedProxies("10.0.0.0/8"); err != nil {
+		t.Fatal(err)
+	}
+
 	tests := []struct {
-		name       string
-		headers    map[string]string
-		remoteAddr string
-		want       string
+		name, remote, xff, realIP, want string
 	}{
-		{
-			name: "X-Real-IP",
-			headers: map[string]string{
-				"X-Real-IP": "1.1.1.1",
-			},
-			remoteAddr: "2.2.2.2",
-			want:       "1.1.1.1",
-		},
-		{
-			name: "X-Forwarded-For",
-			headers: map[string]string{
-				"X-Forwarded-For": "3.3.3.3",
-			},
-			remoteAddr: "2.2.2.2",
-			want:       "3.3.3.3",
-		},
-		{
-			name:       "RemoteAddr",
-			headers:    map[string]string{},
-			remoteAddr: "2.2.2.2",
-			want:       "2.2.2.2",
-		},
+		{"strips port", "1.2.3.4:5678", "", "", "1.2.3.4"},
+		{"ipv6", "[::1]:5678", "", "", "::1"},
+		{"untrusted remote ignores headers", "1.2.3.4:1", "9.9.9.9", "8.8.8.8", "1.2.3.4"},
+		{"trusted proxy uses XFF", "10.0.0.1:1", "9.9.9.9", "", "9.9.9.9"},
+		{"skips trusted hops", "10.0.0.1:1", "9.9.9.9, 7.7.7.7, 10.0.0.2", "", "7.7.7.7"},
+		{"trusted proxy uses X-Real-IP", "10.0.0.1:1", "", "8.8.8.8", "8.8.8.8"},
+		{"invalid header falls back", "10.0.0.1:1", "", "garbage", "10.0.0.1"},
+		{"ipv4-mapped proxy is trusted", "[::ffff:10.0.0.1]:1", "9.9.9.9", "", "9.9.9.9"},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/test", nil)
-			req.RemoteAddr = tt.remoteAddr
-			for k, v := range tt.headers {
-				req.Header.Set(k, v)
+			req := httptest.NewRequest("GET", "/", nil)
+			req.RemoteAddr = tt.remote
+			if tt.xff != "" {
+				req.Header.Set("X-Forwarded-For", tt.xff)
 			}
-
-			c := NewContext(httptest.NewRecorder(), req)
+			if tt.realIP != "" {
+				req.Header.Set("X-Real-IP", tt.realIP)
+			}
+			c := &Context{Request: req, engine: app}
 			if got := c.GetClientIP(); got != tt.want {
-				t.Errorf("ClientIP() = %v, want %v", got, tt.want)
+				t.Errorf("GetClientIP() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestContext_Context(t *testing.T) {
-	req := httptest.NewRequest("GET", "/test", nil)
-	ctx, cancel := context.WithTimeout(req.Context(), 100*time.Millisecond)
-	defer cancel()
+func TestKeysAndContextValue(t *testing.T) {
+	type ctxKey struct{}
+	req := httptest.NewRequest("GET", "/", nil)
+	req = req.WithContext(context.WithValue(req.Context(), ctxKey{}, "from-request"))
+	c := &Context{Request: req}
 
-	req = req.WithContext(ctx)
-	c := NewContext(httptest.NewRecorder(), req)
-
-	// Test Deadline
-	_, ok := c.Deadline()
-	if !ok {
-		t.Error("Expected deadline to be set")
+	if c.Value(ctxKey{}) != "from-request" {
+		t.Error("Value should fall back to the request context")
+	}
+	c.Set("user", "zen")
+	if v, ok := c.Get("user"); !ok || v != "zen" {
+		t.Errorf("Get = %v, %v", v, ok)
+	}
+	if c.Value("user") != "zen" {
+		t.Error("Value should return keys set with Set")
 	}
 
-	// Test Done
-	select {
-	case <-time.After(200 * time.Millisecond):
-		t.Error("Context should have timed out")
-	case <-c.Done():
-		if c.Err() != context.DeadlineExceeded {
-			t.Error("Expected DeadlineExceeded error")
+	// The request can be replaced and the context still follows it.
+	ctx, cancel := context.WithCancel(context.Background())
+	c.Request = c.Request.WithContext(ctx)
+	cancel()
+	if c.Err() != context.Canceled {
+		t.Errorf("Err() = %v, want context.Canceled", c.Err())
+	}
+}
+
+func TestParamsQueryHeadersCookies(t *testing.T) {
+	app := New()
+	app.GET("/u/:id", func(c *Context) {
+		cookie, err := c.GetCookie("session")
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
+		c.SetCookie(&http.Cookie{Name: "seen", Value: "1"})
+		c.Text(200, "%s %s %s %s", c.GetParam("id"), c.GetQueryParam("q"), c.GetHeader("X-Test"), cookie.Value)
+	})
 
-	// Test WithValue
-	key := "test-key"
-	value := "test-value"
-	newCtx := c.WithValue(key, value)
-
-	if newCtx.Value(key) != value {
-		t.Error("WithValue not working as expected")
-	}
-}
-func TestContext_Quit(t *testing.T) {
+	req := httptest.NewRequest("GET", "/u/7?q=search", nil)
+	req.Header.Set("X-Test", "hdr")
+	req.AddCookie(&http.Cookie{Name: "session", Value: "abc"})
 	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/test", nil)
-	c := NewContext(w, req)
+	app.ServeHTTP(w, req)
 
-	handler1 := func(c *Context) {
-		c.Quit()
+	if w.Body.String() != "7 search hdr abc" {
+		t.Errorf("body = %q", w.Body.String())
 	}
-	handler2 := func(c *Context) {
-		t.Error("This handler should not be executed")
-	}
-
-	c.Handlers = []HandlerFunc{handler1, handler2}
-	c.Next()
-
-	if c.Index != len(c.Handlers) {
-		t.Error("Index should be set to the length of handlers")
+	if !strings.Contains(w.Header().Get("Set-Cookie"), "seen=1") {
+		t.Errorf("Set-Cookie = %q", w.Header().Get("Set-Cookie"))
 	}
 }
 
-func TestContext_QuitWithStatus(t *testing.T) {
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/test", nil)
-	c := NewContext(w, req)
+func TestResponseWriterInterfaces(t *testing.T) {
+	var _ http.Flusher = (*ResponseWriter)(nil)
+	var _ http.Hijacker = (*ResponseWriter)(nil)
 
-	handler1 := func(c *Context) {
-		c.QuitWithStatus(http.StatusForbidden)
+	rec := httptest.NewRecorder()
+	w := newResponseWriter(rec)
+	if w.Written() || w.Status() != 200 || w.Size() != -1 {
+		t.Errorf("fresh writer: written=%v status=%d size=%d", w.Written(), w.Status(), w.Size())
 	}
-	handler2 := func(c *Context) {
-		t.Error("This handler should not be executed")
+	w.WriteHeader(201)
+	w.Write([]byte("hi"))
+	w.WriteHeader(500) // ignored once written
+	if rec.Code != 201 || w.Status() != 201 || w.Size() != 2 {
+		t.Errorf("code=%d status=%d size=%d", rec.Code, w.Status(), w.Size())
 	}
-
-	c.Handlers = []HandlerFunc{handler1, handler2}
-	c.Next()
-
-	if c.Index != len(c.Handlers) {
-		t.Error("Index should be set to the length of handlers")
-	}
-	if w.Code != http.StatusForbidden {
-		t.Errorf("Expected status code %d, got %d", http.StatusForbidden, w.Code)
-	}
-	if w.Header().Get("X-Content-Type-Options") != "nosniff" {
-		t.Error("Expected X-Content-Type-Options header to be set to nosniff")
-	}
-}
-
-func TestContext_SetQueryParam(t *testing.T) {
-	req := httptest.NewRequest("GET", "/test", nil)
-	c := NewContext(httptest.NewRecorder(), req)
-
-	c.SetQueryParam("key", "value")
-
-	if got := c.GetQueryParam("key"); got != "value" {
-		t.Errorf("Expected query param 'key' to be 'value', got %q", got)
-	}
-}
-
-func TestContext_GetQueryParams(t *testing.T) {
-	req := httptest.NewRequest("GET", "/test?key1=value1&key2=value2", nil)
-	c := NewContext(httptest.NewRecorder(), req)
-
-	params := c.GetQueryParams()
-
-	if len(params) != 2 {
-		t.Errorf("Expected 2 query params, got %d", len(params))
-	}
-	if params["key1"][0] != "value1" {
-		t.Errorf("Expected query param 'key1' to be 'value1', got %q", params["key1"][0])
-	}
-	if params["key2"][0] != "value2" {
-		t.Errorf("Expected query param 'key2' to be 'value2', got %q", params["key2"][0])
-	}
-}
-
-func TestContext_SetCookie(t *testing.T) {
-	w := httptest.NewRecorder()
-	req := httptest.NewRequest("GET", "/test", nil)
-	c := NewContext(w, req)
-
-	cookie := &http.Cookie{Name: "test", Value: "value"}
-	c.SetCookie(cookie)
-
-	resp := w.Result()
-	cookies := resp.Cookies()
-	var got *http.Cookie
-	for _, cookie := range cookies {
-		if cookie.Name == "test" {
-			got = cookie
-			break
-		}
-	}
-	if got == nil || got.Value != "value" {
-		t.Errorf("Expected cookie 'test' to have value 'value', got %q", got.Value)
-	}
-}
-
-func TestContext_GetCookie(t *testing.T) {
-	req := httptest.NewRequest("GET", "/test", nil)
-	req.AddCookie(&http.Cookie{Name: "test", Value: "value"})
-	c := NewContext(httptest.NewRecorder(), req)
-
-	cookie, err := c.GetCookie("test")
-	if err != nil {
-		t.Errorf("Expected to get cookie 'test', got error %v", err)
-	}
-	if cookie.Value != "value" {
-		t.Errorf("Expected cookie 'test' to have value 'value', got %q", cookie.Value)
-	}
-}
-
-func TestContext_DefaultContext(t *testing.T) {
-	req := httptest.NewRequest("GET", "/test", nil)
-	c := NewContext(httptest.NewRecorder(), req)
-
-	ctx, cancel := c.DefaultContext()
-	defer cancel()
-
-	select {
-	case <-ctx.Done():
-		t.Error("Context should not be done yet")
-	default:
-	}
-
-	time.Sleep(11 * time.Second)
-
-	select {
-	case <-ctx.Done():
-		if ctx.Err() != context.DeadlineExceeded {
-			t.Errorf("Expected context error to be DeadlineExceeded, got %v", ctx.Err())
-		}
-	default:
-		t.Error("Context should be done")
+	if http.NewResponseController(w).Flush() != nil {
+		t.Error("ResponseController should reach the underlying writer")
 	}
 }

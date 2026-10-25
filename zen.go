@@ -1,226 +1,172 @@
+// Package zen is a lightweight HTTP framework for Go.
 package zen
 
 import (
 	"fmt"
-	"net"
 	"net/http"
+	"net/netip"
+	"slices"
 	"strings"
-	"time"
 )
 
-// Engine is the core framework instance for managing routing and middleware for the Zen framework.
-type Engine struct {
-	*RouterGroup                // - RouterGroup: Provides group-based routing and middleware chaining.
-	router       *Router        // - router: The main router instance that handles route registration and dispatching.
-	groups       []*RouterGroup // - groups: A collection of all RouterGroups associated with the engine.
-	addr         string         // - addr: The address where the server is bound (host:port).
-	ctx          Context        // - ctx: A default context used for server operations like shutdown.
-}
+// HandlerFunc defines the handler used by zen middleware and routes.
+type HandlerFunc func(*Context)
 
-type Engine2 struct {
-	*RouterGroup                // - RouterGroup: Provides group-based routing and middleware chaining.
-	router       *Router        // - router: The main router instance that handles route registration and dispatching.
-	groups       []*RouterGroup // - groups: A collection of all RouterGroups associated with the engine.
-	addr         string         // - addr: The address where the server is bound (host:port).
-	ctx          Context        // - ctx: A default context used for server operations like shutdown.
-}
-
-type Engine3 struct {
-	*RouterGroup                // - RouterGroup: Provides group-based routing and middleware chaining.
-	router       *Router        // - router: The main router instance that handles route registration and dispatching.
-	groups       []*RouterGroup // - groups: A collection of all RouterGroups associated with the engine.
-	addr         string         // - addr: The address where the server is bound (host:port).
-	ctx          Context        // - ctx: A default context used for server operations like shutdown.
-}
-
-type Engine4 struct {
-	*RouterGroup                // - RouterGroup: Provides group-based routing and middleware chaining.
-	router       *Router        // - router: The main router instance that handles route registration and dispatching.
-	groups       []*RouterGroup // - groups: A collection of all RouterGroups associated with the engine.
-	addr         string         // - addr: The address where the server is bound (host:port).
-	ctx          Context        // - ctx: A default context used for server operations like shutdown.
-}
-
-// Route represents an individual HTTP route within the framework.
+// Route describes a registered route.
 type Route struct {
-	Method string // - Method: The HTTP method (e.g., GET, POST) associated with the route.
-	Path   string // - Path: The URL path pattern (e.g., "/users/:id") for the route.
+	Method string
+	Path   string
 }
 
-// New creates a new Engine instance.
-// Initializes routing capabilities and returns a new Engine instance.
-func New() *Engine {
-	engine := &Engine{
-		router: NewRouter(),
-	}
+// Engine is the framework instance. It holds the router and global middleware
+// and implements http.Handler, so it can be passed to any http.Server.
+type Engine struct {
+	RouterGroup
 
-	engine.RouterGroup = &RouterGroup{engine: engine}
-	engine.groups = []*RouterGroup{engine.RouterGroup}
+	trees          map[string]*node
+	routes         []Route
+	maxParams      int
+	noRoute        []HandlerFunc
+	allNoRoute     []HandlerFunc
+	trustedProxies []netip.Prefix
+}
+
+// New returns a new blank Engine without any middleware attached.
+func New() *Engine {
+	engine := &Engine{trees: make(map[string]*node)}
+	engine.RouterGroup = RouterGroup{basePath: "/", engine: engine}
+	engine.rebuildNoRoute()
 	return engine
 }
 
-// Serve starts an HTTP server on the given address.
-// - addr: The address (host:port) where the server will listen.
-// - Returns an error if the server fails to start or if address resolution fails.
-func (e *Engine) Serve(addr string) error {
-	newAddr, err := resolveAddress(addr)
-	if err != nil {
-		return err
-	}
-
-	if IsDevMode() {
-		e.printRoutes()
-		fmt.Print(e.zenAsciiArt(newAddr))
-	}
-
-	return http.ListenAndServe(newAddr, e)
+// Default returns an Engine with the Logger and Recovery middleware attached.
+func Default() *Engine {
+	engine := New()
+	engine.Apply(Logger(), Recovery())
+	return engine
 }
 
-// ServeTLS starts an HTTPS server on the given address using TLS.
-// - addr: The address (host:port) where the server will listen.
-// - certFile: Path to the TLS certificate file.
-// - keyFile: Path to the TLS key file.
-// - Returns an error if the server fails to start or if address resolution fails.
-func (e *Engine) ServeTLS(addr, certFile, keyFile string) error {
-	newAddr, err := resolveAddress(addr)
-	if err != nil {
-		return err
-	}
-
-	if IsDevMode() {
-		e.printRoutes()
-		fmt.Print(e.zenAsciiArt(newAddr))
-	}
-
-	return http.ListenAndServeTLS(newAddr, certFile, keyFile, e)
+// Apply attaches global middleware. Middleware only applies to routes
+// registered after the call, so call Apply before defining routes.
+func (engine *Engine) Apply(middleware ...HandlerFunc) {
+	engine.RouterGroup.Apply(middleware...)
+	engine.rebuildNoRoute()
 }
 
-// ServeWithTimeout starts an HTTP server with timeout settings on the given address.
-// - addr: The address (host:port) where the server will listen.
-// - timeout: Duration for read, write, and idle timeouts.
-// - Returns an error if the server fails to start or if address resolution fails.
-func (e *Engine) ServeWithTimeout(addr string, timeout time.Duration) error {
-	newAddr, err := resolveAddress(addr)
-	if err != nil {
-		return err
-	}
-
-	srv := &http.Server{
-		Addr:         newAddr,
-		Handler:      e,
-		ReadTimeout:  timeout,
-		WriteTimeout: timeout,
-		IdleTimeout:  timeout * 2,
-	}
-	if IsDevMode() {
-		e.printRoutes()
-		fmt.Print(e.zenAsciiArt(newAddr))
-	}
-
-	return srv.ListenAndServe()
+// NoRoute sets the handlers for requests that match no route.
+// The default responds with 404 and the body "404 NOT FOUND".
+func (engine *Engine) NoRoute(handlers ...HandlerFunc) {
+	engine.noRoute = handlers
+	engine.rebuildNoRoute()
 }
 
-// Shutdown gracefully shuts down the server.
-// - timeout: The maximum duration to wait for existing connections to close.
-// - Returns an error if shutdown fails.
-func (engine *Engine) Shutdown(timeout time.Duration) error {
-	server := &http.Server{
-		Addr:    engine.addr,
-		Handler: engine,
+func (engine *Engine) rebuildNoRoute() {
+	handlers := engine.noRoute
+	if len(handlers) == 0 {
+		handlers = []HandlerFunc{notFound}
 	}
-
-	var ctx, cancel = engine.ctx.DefaultContext()
-	defer cancel()
-
-	return server.Shutdown(ctx)
-
+	engine.allNoRoute = engine.combineHandlers(handlers)
 }
 
-// ServeHTTP implements the http.Handler interface for the Engine.
-// - w: The HTTP response writer.
-// - req: The HTTP request.
-// - Delegates request handling to the router.
-func (e *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	c := NewContext(w, req)
-	e.router.handle(c)
+func notFound(c *Context) {
+	c.Text(http.StatusNotFound, "404 NOT FOUND")
 }
 
-// Apply adds middleware to the engine's global middleware stack.
-// - middlewares: A variadic list of middleware functions to apply.
-// - Middleware is applied globally to all routes.
-func (engine *Engine) Apply(middlewares ...HandlerFunc) {
-	engine.router.Apply(middlewares...)
-}
-
-// Routes retrieves all registered routes in the engine.
-// - Returns: A slice of Route structs representing HTTP routes (method and path).
-func (engine *Engine) Routes() []Route {
-	var routes []Route
-
-	for method, paths := range engine.router.handlers {
-		for path := range paths {
-			routes = append(routes, Route{
-				Method: method,
-				Path:   path,
-			})
-		}
-	}
-
-	return routes
-}
-
-// checkPort validates and resolves a port for the given address.
-// - addr: The address (host:port) to check.
-// - Returns: A valid, available port and an error if resolution fails.
-// - If the port is in use, it increments until a free one is found.
-func checkPort(addr string) (int, error) {
-	_, portStr, err := net.SplitHostPort(addr)
-	if err != nil {
-		return 0, fmt.Errorf("invalid port number: %v", err)
-	}
-
-	port := 0
-	_, err = fmt.Sscanf(portStr, "%d", &port)
-	if err != nil {
-		return 0, fmt.Errorf("invalid port number: %v", err)
-	}
-
-	for {
-		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-		if err != nil {
-			if strings.Contains(err.Error(), "address already in use") {
-				port++
-				continue
+// SetTrustedProxies sets the proxies (IP addresses or CIDR ranges) whose
+// X-Forwarded-For and X-Real-IP headers are honoured by Context.GetClientIP.
+// By default no proxy is trusted and the connection's remote address is used.
+func (engine *Engine) SetTrustedProxies(proxies ...string) error {
+	prefixes := make([]netip.Prefix, 0, len(proxies))
+	for _, proxy := range proxies {
+		var prefix netip.Prefix
+		var err error
+		if strings.Contains(proxy, "/") {
+			prefix, err = netip.ParsePrefix(proxy)
+		} else {
+			var addr netip.Addr
+			if addr, err = netip.ParseAddr(proxy); err == nil {
+				addr = addr.Unmap()
+				prefix = netip.PrefixFrom(addr, addr.BitLen())
 			}
-			return 0, err
 		}
-		listener.Close()
-		return port, nil
+		if err != nil {
+			return fmt.Errorf("zen: invalid trusted proxy %q: %w", proxy, err)
+		}
+		prefixes = append(prefixes, prefix.Masked())
+	}
+	engine.trustedProxies = prefixes
+	return nil
+}
+
+func (engine *Engine) isTrustedProxy(addr netip.Addr) bool {
+	addr = addr.Unmap()
+	return slices.ContainsFunc(engine.trustedProxies, func(p netip.Prefix) bool {
+		return p.Contains(addr)
+	})
+}
+
+func (engine *Engine) addRoute(method, path string, handlers []HandlerFunc) {
+	if method == "" {
+		panic("zen: HTTP method can not be empty")
+	}
+	if len(handlers) == 0 {
+		panic("zen: there must be at least one handler")
+	}
+
+	root := engine.trees[method]
+	if root == nil {
+		root = &node{}
+		engine.trees[method] = root
+	}
+	if !root.insert(path, handlers) {
+		panic(fmt.Sprintf("zen: route %s %s is already registered", method, path))
+	}
+
+	engine.routes = append(engine.routes, Route{Method: method, Path: path})
+	if n := countParams(path); n > engine.maxParams {
+		engine.maxParams = n
 	}
 }
 
-// resolveAddress resolves the final address for the server to bind to.
-// - addr: The input address (host:port).
-// - Returns: A resolved address string and an error if resolution fails.
-// - Logs a warning if the port is already in use and changes the port.
-func resolveAddress(addr string) (string, error) {
-	port, err := checkPort(addr)
-	if err != nil {
-		Errorf("port check failed: %v", err)
-		return "", fmt.Errorf("port check failed: %v", err)
+// Routes returns the registered routes in registration order.
+func (engine *Engine) Routes() []Route {
+	return slices.Clone(engine.routes)
+}
+
+// ServeHTTP implements http.Handler.
+func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	c := &Context{
+		Writer:  newResponseWriter(w),
+		Request: req,
+		engine:  engine,
+		index:   -1,
 	}
 
-	newAddr := fmt.Sprintf(":%d", port)
-	if strings.Contains(addr, ":") {
-		host, _, _ := net.SplitHostPort(addr)
-		if host != "" {
-			newAddr = fmt.Sprintf("%s:%d", host, port)
+	handlers := engine.allNoRoute
+	if root := engine.trees[req.Method]; root != nil {
+		var params []param
+		if engine.maxParams > 0 {
+			params = make([]param, 0, engine.maxParams)
+		}
+		if h, p := root.search(req.URL.Path, params); h != nil {
+			handlers, c.params = h, p
 		}
 	}
 
-	if newAddr != addr {
-		Infof("Port %s in in use. Using port %d instead", addr, port)
-	}
+	c.handlers = handlers
+	c.Next()
+	c.Writer.writeHeaderNow()
+}
 
-	return newAddr, nil
+// Serve starts an HTTP server on addr. For timeouts or graceful shutdown,
+// pass the engine to your own http.Server as its Handler instead.
+func (engine *Engine) Serve(addr string) error {
+	engine.debugPrintStartup(addr)
+	return http.ListenAndServe(addr, engine)
+}
+
+// ServeTLS starts an HTTPS server on addr.
+func (engine *Engine) ServeTLS(addr, certFile, keyFile string) error {
+	engine.debugPrintStartup(addr)
+	return http.ListenAndServeTLS(addr, certFile, keyFile, engine)
 }

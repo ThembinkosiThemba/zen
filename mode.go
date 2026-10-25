@@ -1,41 +1,44 @@
-// This package is responsible for setting the mode for the zen framework.
-// If you do not set the mode when running your application, by default, you will be running
-// on DevMode. For production releases, you can switch to release mode.
-// Realease mode will remove all useful development functions for a much cleaner
-// out on your console/terminal
 package zen
 
 import (
 	"fmt"
+	"os"
 )
 
-// Mode represents the running mode of the Zen framework
+// Mode is the running mode of the framework.
 type Mode int
 
 const (
-	// DevMode enables detailed logging and debugging features
+	// DevMode prints registered routes and startup information. It is the default.
 	DevMode Mode = iota
-
-	// Production disables features for better performance and organization
+	// Production disables debug output.
 	Production
 )
 
 var currentMode = DevMode
 
-// SetCurrentMode sets the current mode that zen will be running on
-func SetCurrentMode(m Mode) {
-	currentMode = m
-	if currentMode == DevMode {
-		Debug("Running in development mode - switch to Production for deployment")
-		Info("You can change the mode by: zen.SetCurrentMode(zen.Production)")
-		fmt.Println()
+// SetCurrentMode sets the running mode. Call it before creating routes.
+func SetCurrentMode(m Mode) { currentMode = m }
+
+// GetMode returns the running mode.
+func GetMode() Mode { return currentMode }
+
+// IsDevMode reports whether zen is running in DevMode.
+func IsDevMode() bool { return currentMode == DevMode }
+
+func debugPrint(format string, values ...any) {
+	if IsDevMode() {
+		fmt.Fprintf(os.Stderr, "[ZEN-debug] "+format+"\n", values...)
 	}
 }
-// Helper function used to get the mode for zen
-func GetMode() Mode {
-	return currentMode
-}
 
-func IsDevMode() bool {
-	return currentMode == DevMode
+func (engine *Engine) debugPrintStartup(addr string) {
+	if !IsDevMode() {
+		return
+	}
+	debugPrint("Running in DevMode. Switch to production with zen.SetCurrentMode(zen.Production)")
+	for _, r := range engine.routes {
+		debugPrint("%-7s %s", r.Method, r.Path)
+	}
+	debugPrint("Listening on %s", addr)
 }
